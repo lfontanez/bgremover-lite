@@ -17,6 +17,17 @@ if ! pkg-config --exists opencv4; then
     exit 1
 fi
 
+# Check for CUDA
+echo "Checking for CUDA..."
+if command -v nvidia-smi >/dev/null 2>&1; then
+    echo "NVIDIA GPU detected:"
+    nvidia-smi --query-gpu=name --format=csv,noheader,nounits
+    CUDA_AVAILABLE="true"
+else
+    echo "No NVIDIA GPU detected"
+    CUDA_AVAILABLE="false"
+fi
+
 # Create and enter build directory
 echo "Creating build directory..."
 mkdir -p build
@@ -31,9 +42,20 @@ echo "Building the project..."
 make -j$(nproc)
 
 echo "=== Build Complete! ==="
-echo "The executable has been created in the build directory."
-echo "You can run it with: ./bgremover"
+echo "The executables have been created in the build directory."
 echo ""
-echo "Optional: Copy the executable to the root directory:"
-echo "  cp build/bgremover ."
-echo "  Then run: ./bgremover"
+echo "Available executables:"
+if [ -f "./bgremover" ]; then
+    echo "  📱 CPU Version: ./bgremover"
+    echo "  Usage: ./bgremover or ./bgremover <video_file>"
+fi
+if [ -f "./bgremover_gpu" ]; then
+    echo "  🚀 GPU Version: ./bgremover_gpu"
+    echo "  Usage: ./bgremover_gpu or ./bgremover_gpu <video_file>"
+fi
+echo ""
+echo "Optional: Copy executables to the root directory:"
+echo "  cp build/bgremover .           # CPU version"
+if [ -f "./bgremover_gpu" ]; then
+    echo "  cp build/bgremover_gpu .     # GPU version"
+fi
