@@ -35,39 +35,44 @@ Mat run_gpu_inference(Ort::Session& session, const Mat& img) {
                                input_names.data(), &input_tensor, 1,
                                output_names.data(), 1);
     
-    // Process result
+    // Process result with proper mask isolation
     float* data = outputs.front().GetTensorMutableData<float>();
     Mat mask(320, 320, CV_32F, data);
     resize(mask, mask, img.size());
-    normalize(mask, mask, 0, 1, NORM_MINMAX);
+
+    // ✅ FIXED: Proper mask isolation for GPU version
+    normalize(mask, mask, 0.0, 1.0, NORM_MINMAX);
+    
+    // Sharpen the separation between person and background
+    threshold(mask, mask, 0.4, 1.0, THRESH_BINARY);
+    
+    // Apply soft edges to prevent harsh borders
+    GaussianBlur(mask, mask, Size(7, 7), 0);
     
     return mask;
 }
 
-// CPU processing with GPU-optimized parameters
+// Optimized GPU/CPU processing with proper mask isolation
 Mat fast_blend(const Mat& frame, const Mat& mask) {
-    // Use smaller kernel and optimized processing
+    // Use moderate kernel for quality
     Mat blurred;
-    GaussianBlur(frame, blurred, Size(9, 9), 0);  // Smaller kernel for speed
+    GaussianBlur(frame, blurred, Size(15, 15), 0);
     
-    // Optimized masking
-    Mat mask_clean = (mask > 128) * 255;
+    // Clean, simple mask (0 or 255) - works with properly isolated mask
+    Mat mask_clean = (mask > 0.5) * 255;
     
-    // Direct pixel-level blend with optimization
+    // Direct pixel-level blend - fastest and most reliable
     Mat output = frame.clone();
-    
-    // Use vectorized operations for speed
     for (int y = 0; y < frame.rows; y++) {
-        const Vec3b* frame_ptr = frame.ptr<Vec3b>(y);
-        const Vec3b* blur_ptr = blurred.ptr<Vec3b>(y);
-        const uchar* mask_ptr = mask_clean.ptr<uchar>(y);
-        Vec3b* out_ptr = output.ptr<Vec3b>(y);
-        
         for (int x = 0; x < frame.cols; x++) {
-            if (mask_ptr[x] == 0) {
-                out_ptr[x] = blur_ptr[x];
+            uchar m = mask_clean.at<uchar>(y, x);
+            if (m == 0) {
+                // Outside mask - use blurred background
+                output.at<Vec3b>(y, x) = blurred.at<Vec3b>(y, x);
+            } else {
+                // Inside mask - use original (person in focus)
+                // output.at<Vec3b>(y, x) stays as original
             }
-            // else keep original (frame_ptr[x])
         }
     }
     

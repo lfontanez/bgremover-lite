@@ -4,33 +4,12 @@ project(bgremover-lite LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Enable CUDA support
-enable_language(CUDA)
-set(CMAKE_CUDA_STANDARD 17)
-set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-
 # Find required packages
 find_package(OpenCV REQUIRED)
 
-# Check for CUDA
-find_package(CUDA QUIET)
-if(CUDA_FOUND)
-    message(STATUS "CUDA found: ${CUDA_VERSION}")
-    set(CUDA_AVAILABLE TRUE)
-else()
-    set(CUDA_AVAILABLE FALSE)
-    message(STATUS "CUDA not found, building CPU-only version")
-endif()
-
-# Find OpenCV with CUDA support
-find_package(OpenCV 4.0 QUIET COMPONENTS core imgproc imgcodecs videoio dnn opencv_cudaarithm opencv_cudafilters opencv_cudaimgproc)
-if(OpenCV_CUDA_FOUND)
-    message(STATUS "OpenCV CUDA support found")
-    set(OpenCV_CUDA_AVAILABLE TRUE)
-else()
-    set(OpenCV_CUDA_AVAILABLE FALSE)
-    message(STATUS "OpenCV CUDA support not found")
-endif()
+# Set CUDA availability to FALSE for now
+set(CUDA_AVAILABLE FALSE)
+message(STATUS "CUDA support disabled - building CPU-only version")
 
 # Download ONNX Runtime if not already present
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/onnxruntime/include/onnxruntime_cxx_api.h")
@@ -135,18 +114,15 @@ add_executable(bgremover ${CMAKE_SOURCE_DIR}/main.cpp)
 target_link_libraries(bgremover ${OpenCV_LIBS} ${ONNXRUNTIME_LIB})
 
 # Add GPU executable (ONNX GPU acceleration) 
-# Note: This doesn't require OpenCV CUDA, just ONNX Runtime CUDA support
+add_executable(bgremover_gpu ${CMAKE_SOURCE_DIR}/main_gpu.cpp)
+target_link_libraries(bgremover_gpu ${OpenCV_LIBS} ${ONNXRUNTIME_LIB})
+
+# Set optimization flags
 if(CUDA_AVAILABLE)
   message(STATUS "Building GPU-accelerated version (ONNX Runtime CUDA)")
-  add_executable(bgremover_gpu ${CMAKE_SOURCE_DIR}/main_gpu.cpp)
-  target_link_libraries(bgremover_gpu ${OpenCV_LIBS} ${ONNXRUNTIME_LIB})
-  
-  # Set optimization flags for GPU version
   target_compile_options(bgremover_gpu PRIVATE -O3 -ffast-math -march=native)
 else()
   message(STATUS "CUDA not available - building CPU optimized version")
-  add_executable(bgremover_gpu ${CMAKE_SOURCE_DIR}/main_gpu.cpp)
-  target_link_libraries(bgremover_gpu ${OpenCV_LIBS} ${ONNXRUNTIME_LIB})
   target_compile_options(bgremover_gpu PRIVATE -O3 -ffast-math)
 endif()
 

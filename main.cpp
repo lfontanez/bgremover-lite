@@ -7,7 +7,7 @@ using namespace std;
 
 Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "bgremover");
 
-// Run inference and return float mask 0–1
+// Run inference and return properly isolated mask
 Mat run_inference(Ort::Session& session, const Mat& img) {
     Mat resized;
     resize(img, resized, Size(320, 320));
@@ -37,7 +37,16 @@ Mat run_inference(Ort::Session& session, const Mat& img) {
     float* data = outputs.front().GetTensorMutableData<float>();
     Mat mask(320, 320, CV_32F, data);
     resize(mask, mask, img.size());
-    normalize(mask, mask, 0, 1, NORM_MINMAX);
+
+    // ✅ FIXED: Proper mask isolation
+    normalize(mask, mask, 0.0, 1.0, NORM_MINMAX);
+    
+    // Sharpen the separation between person and background
+    threshold(mask, mask, 0.4, 1.0, THRESH_BINARY);
+    
+    // Apply soft edges to prevent harsh borders
+    GaussianBlur(mask, mask, Size(7, 7), 0);
+    
     return mask;
 }
 
