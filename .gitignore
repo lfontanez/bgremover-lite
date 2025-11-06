@@ -1,0 +1,128 @@
+# C++ build artifacts and directories
+build/
+bin/
+obj/
+out/
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+*.cmake
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ONNX Runtime (downloaded during build process)
+onnxruntime/
+external/
+
+# Model files - these are typically essential for the project to work
+# If models are small enough, you might want to track them:
+# models/*.onnx
+# If they're large, consider using Git LFS or download during build:
+# models/
+
+# System and temporary files
+*.tmp
+*.temp
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# Testing
+*.coverage
+.coverage.*
+htmlcov/
+.tox/
+.cache
+.pytest_cache/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Package files
+*.tar.gz
+*.zip
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Local configuration files
+config.ini
+.env
+.env.local
+.env.*.local
+
+# System files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Node.js (if frontend components are added later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Machine learning model files (if using other formats)
+*.pkl
+*.pickle
+*.h5
+*.pb
+*.tflite
+
+# Profiling files
+*.prof
+*.gprof
+
+# Documentation
+docs/_build/
+docs/build/
+
+# Aider files
+.aider*
