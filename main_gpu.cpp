@@ -276,6 +276,8 @@ int main(int argc, char** argv) {
     string source = "0";
     bool vcam_enabled = false;
     string vcam_device = "/dev/video2";
+    bool blur_enabled = true;
+    string blur_level = "mid";
     
     // Parse command-line arguments
     for (int i = 1; i < argc; ++i) {
@@ -284,10 +286,33 @@ int main(int argc, char** argv) {
             vcam_enabled = true;
         } else if (arg == "--vcam-device" && i + 1 < argc) {
             vcam_device = argv[++i];
-        } else if (i == 1 && arg != "--vcam" && arg != "-v" && arg != "--vcam-device") {
+        } else if (arg == "--no-blur" || arg == "--no-background-blur") {
+            blur_enabled = false;
+        } else if (arg == "--blur-low") {
+            blur_level = "low";
+        } else if (arg == "--blur-mid") {
+            blur_level = "mid";
+        } else if (arg == "--blur-high") {
+            blur_level = "high";
+        } else if (i == 1 && arg != "--vcam" && arg != "-v" && arg != "--vcam-device" &&
+                   arg != "--no-blur" && arg != "--no-background-blur" && 
+                   arg != "--blur-low" && arg != "--blur-mid" && arg != "--blur-high") {
             source = arg;  // This is the video source
         }
     }
+    
+    // Display blur settings
+    cout << "Background blur settings:" << endl;
+    cout << "  Enabled: " << (blur_enabled ? "Yes" : "No") << endl;
+    if (blur_enabled) {
+        cout << "  Level: " << blur_level << endl;
+        Size kernel_size;
+        if (blur_level == "low") kernel_size = Size(7, 7);
+        else if (blur_level == "high") kernel_size = Size(25, 25);
+        else kernel_size = Size(15, 15);  // mid
+        cout << "  Kernel: " << kernel_size.width << "x" << kernel_size.height << endl;
+    }
+    cout << endl;
     
     VideoCapture cap;
     if (source == "0") {
@@ -433,6 +458,18 @@ int main(int argc, char** argv) {
     Mat mask, output, blurred;
     bool first_frame = true;
     
+    // Get blur kernel size
+    Size blur_kernel;
+    if (!blur_enabled) {
+        blur_kernel = Size(0, 0);
+    } else if (blur_level == "low") {
+        blur_kernel = Size(7, 7);
+    } else if (blur_level == "high") {
+        blur_kernel = Size(25, 25);
+    } else {
+        blur_kernel = Size(15, 15);  // mid
+    }
+    
     while (cap.read(frame)) {
         // Ensure frame dimensions are suitable for 1080p processing
         if (frame.cols != width || frame.rows != height) {
@@ -460,16 +497,15 @@ int main(int argc, char** argv) {
         // Resize mask back to full resolution
         resize(mask_320, mask, frame.size());
         
-        // Pre-allocate blurred frame for 1080p efficiency
-        if (first_frame || blurred.empty() || blurred.size() != frame.size()) {
-            blurred.create(frame.size(), frame.type());
+        // Apply blur only if enabled
+        if (blur_enabled && blur_kernel.width > 0) {
+            // Pre-allocate blurred frame for 1080p efficiency
+            if (first_frame || blurred.empty() || blurred.size() != frame.size()) {
+                blurred.create(frame.size(), frame.type());
+            }
+            // Apply Gaussian blur with specified kernel
+            GaussianBlur(frame, blurred, blur_kernel, 0);
         }
-        
-        // Optimized blending for 1080p
-        GaussianBlur(frame, blurred, Size(15, 15), 0);
-        
-        // Clean, optimized mask for 1080p
-        Mat mask_clean = (mask > 0.5);
         
         // Ensure output frame is properly allocated
         if (first_frame || output.empty() || output.size() != frame.size()) {
@@ -477,11 +513,17 @@ int main(int argc, char** argv) {
         }
         
         // Fast pixel-level blend optimized for 1080p
-        frame.copyTo(output, mask_clean);
-        // Create proper 3-channel mask for the blurred background
-        Mat mask_3channel;
-        cv::cvtColor(~mask_clean, mask_3channel, cv::COLOR_GRAY2BGR);
-        blurred.copyTo(output, mask_3channel);
+        Mat mask_clean = (mask > 0.5);
+        if (blur_enabled) {
+            frame.copyTo(output, mask_clean);
+            // Create proper 3-channel mask for the blurred background
+            Mat mask_3channel;
+            cv::cvtColor(~mask_clean, mask_3channel, cv::COLOR_GRAY2BGR);
+            blurred.copyTo(output, mask_3channel);
+        } else {
+            // No blur - just show original frame
+            frame.copyTo(output);
+        }
         
         // Write to virtual camera if enabled and open
         if (vcam_enabled && vcam_opened && vcam_output) {
@@ -490,10 +532,16 @@ int main(int argc, char** argv) {
             }
         }
         
-        // Show window with appropriate title
+        // Create window title with blur settings
+        string blur_info = blur_enabled ? 
+            (blur_level == "low" ? " (Low Blur)" : 
+             blur_level == "high" ? " (High Blur)" : " (Mid Blur)") : 
+            " (No Blur)";
         string window_title = cuda_available ? 
-            (vcam_enabled ? "1080p Background Removed (GPU + Virtual Camera)" : "1080p Background Removed (GPU)") :
-            (vcam_enabled ? "1080p Background Removed (CPU + Virtual Camera)" : "1080p Background Removed (CPU)");
+            (vcam_enabled ? "1080p Background Removed (GPU + Virtual Camera)" + blur_info : 
+                          "1080p Background Removed (GPU)" + blur_info) :
+            (vcam_enabled ? "1080p Background Removed (CPU + Virtual Camera)" + blur_info : 
+                          "1080p Background Removed (CPU)" + blur_info);
         imshow(window_title, output);
         if (waitKey(1) == 27) break;  // ESC
         
@@ -512,9 +560,16 @@ int main(int argc, char** argv) {
             string perf_label = cuda_available ? 
                 (vcam_enabled ? "1080p GPU + VCam" : "1080p GPU") : 
                 (vcam_enabled ? "1080p CPU + VCam" : "1080p CPU");
+            
+            // Add blur info to performance output
+            string blur_info = blur_enabled ? 
+                (blur_level == "low" ? " [Low Blur]" : 
+                 blur_level == "high" ? " [High Blur]" : " [Mid Blur]") : 
+                " [No Blur]";
+            
             cout << "🚀 " << perf_label << " Performance: " 
                  << fps_real << " FPS (" << frame_count << " frames in "
-                 << duration.count() << "ms)" << endl;
+                 << duration.count() << "ms)" << blur_info << endl;
             
             // Reset for next measurement
             frame_count = 0;

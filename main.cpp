@@ -51,7 +51,51 @@ Mat run_inference(Ort::Session& session, const Mat& img) {
 }
 
 int main(int argc, char** argv) {
-    string source = argc > 1 ? argv[1] : "0";
+    // Default command-line arguments
+    string source = "0";
+    bool blur_enabled = true;
+    string blur_level = "mid";
+    
+    // Parse command-line arguments
+    for (int i = 1; i < argc; ++i) {
+        string arg = argv[i];
+        if (arg == "--no-blur" || arg == "--no-background-blur") {
+            blur_enabled = false;
+        } else if (arg == "--blur-low") {
+            blur_level = "low";
+        } else if (arg == "--blur-mid") {
+            blur_level = "mid";
+        } else if (arg == "--blur-high") {
+            blur_level = "high";
+        } else if (i == 1 && arg != "--no-blur" && arg != "--no-background-blur" && 
+                   arg != "--blur-low" && arg != "--blur-mid" && arg != "--blur-high") {
+            source = arg;  // This is the video source
+        }
+    }
+    
+    // Display blur settings
+    cout << "Background blur settings:" << endl;
+    cout << "  Enabled: " << (blur_enabled ? "Yes" : "No") << endl;
+    if (blur_enabled) {
+        cout << "  Level: " << blur_level << endl;
+        Size kernel_size;
+        if (blur_level == "low") kernel_size = Size(7, 7);
+        else if (blur_level == "high") kernel_size = Size(25, 25);
+        else kernel_size = Size(15, 15);  // mid
+        cout << "  Kernel: " << kernel_size.width << "x" << kernel_size.height << endl;
+    }
+    cout << endl;
+    
+    // Show command-line options help
+    cout << "Command-line options:" << endl;
+    cout << "  [video_source]        Video file or device (default: 0 for webcam)" << endl;
+    cout << "  --no-blur             Disable background blur" << endl;
+    cout << "  --no-background-blur  Disable background blur (alternative)" << endl;
+    cout << "  --blur-low           Use low intensity blur (7x7 kernel)" << endl;
+    cout << "  --blur-mid           Use medium intensity blur (15x15 kernel, default)" << endl;
+    cout << "  --blur-high          Use high intensity blur (25x25 kernel)" << endl;
+    cout << endl;
+    
     VideoCapture cap;
     if (source == "0") {
         cout << "Attempting to open webcam (device 0)...\n";
@@ -94,6 +138,18 @@ int main(int argc, char** argv) {
     // Pre-allocate buffers for efficient 1080p processing
     Mat mask, output, blurred;
     
+    // Get blur kernel size
+    Size blur_kernel;
+    if (!blur_enabled) {
+        blur_kernel = Size(0, 0);
+    } else if (blur_level == "low") {
+        blur_kernel = Size(7, 7);
+    } else if (blur_level == "high") {
+        blur_kernel = Size(25, 25);
+    } else {
+        blur_kernel = Size(15, 15);  // mid
+    }
+    
     while (cap.read(frame)) {
         // Ensure consistent frame size for 1080p processing
         if (frame.cols != width || frame.rows != height) {
@@ -111,13 +167,15 @@ int main(int argc, char** argv) {
         // Resize mask back to full resolution
         resize(mask_320, mask, frame.size());
         
-        // Pre-allocate blurred frame for 1080p efficiency
-        if (first_frame || blurred.empty() || blurred.size() != frame.size()) {
-            blurred.create(frame.size(), frame.type());
+        // Apply blur only if enabled
+        if (blur_enabled && blur_kernel.width > 0) {
+            // Pre-allocate blurred frame for 1080p efficiency
+            if (first_frame || blurred.empty() || blurred.size() != frame.size()) {
+                blurred.create(frame.size(), frame.type());
+            }
+            // Apply Gaussian blur with specified kernel
+            GaussianBlur(frame, blurred, blur_kernel, 0);
         }
-        
-        // Apply Gaussian blur to frame
-        GaussianBlur(frame, blurred, Size(15, 15), 0);
         
         // Ensure output frame is properly allocated
         if (first_frame || output.empty() || output.size() != frame.size()) {
@@ -126,10 +184,20 @@ int main(int argc, char** argv) {
         
         // Optimized pixel-level blend for 1080p
         Mat mask_clean = (mask > 0.5);
-        frame.copyTo(output, mask_clean);
-        output.setTo(blurred, ~mask_clean);
+        if (blur_enabled) {
+            frame.copyTo(output, mask_clean);
+            output.setTo(blurred, ~mask_clean);
+        } else {
+            // No blur - just show original frame
+            frame.copyTo(output);
+        }
 
-        string window_title = "1080p Background Removed (CPU)";
+        // Create window title with blur settings
+        string blur_info = blur_enabled ? 
+            (blur_level == "low" ? " (Low Blur)" : 
+             blur_level == "high" ? " (High Blur)" : " (Mid Blur)") : 
+            " (No Blur)";
+        string window_title = "1080p Background Removed (CPU)" + blur_info;
         imshow(window_title, output);
         if (waitKey(1) == 27) break;  // ESC
         
