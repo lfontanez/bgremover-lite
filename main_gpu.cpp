@@ -9,6 +9,7 @@
 #include <cuda_runtime_api.h>
 #include <driver_types.h>
 #include <cuda.h>
+#include "v4l2_output.hpp"
 
 using namespace cv;
 using namespace std;
@@ -271,7 +272,23 @@ Mat fast_blend(const Mat& frame, const Mat& mask) {
 }
 
 int main(int argc, char** argv) {
-    string source = argc > 1 ? argv[1] : "0";
+    // Default command-line arguments
+    string source = "0";
+    bool vcam_enabled = false;
+    string vcam_device = "/dev/video2";
+    
+    // Parse command-line arguments
+    for (int i = 1; i < argc; ++i) {
+        string arg = argv[i];
+        if (arg == "--vcam" || arg == "-v") {
+            vcam_enabled = true;
+        } else if (arg == "--vcam-device" && i + 1 < argc) {
+            vcam_device = argv[++i];
+        } else if (i == 1 && arg != "--vcam" && arg != "-v" && arg != "--vcam-device") {
+            source = arg;  // This is the video source
+        }
+    }
+    
     VideoCapture cap;
     if (source == "0") {
         cout << "Attempting to open webcam (device 0) with GPU acceleration...\n";
@@ -292,6 +309,22 @@ int main(int argc, char** argv) {
     int height = cap.get(CAP_PROP_FRAME_HEIGHT);
     cout << "Video properties - FPS: " << fps << ", Resolution: " 
          << width << "x" << height << "\n";
+
+    // Initialize virtual camera if enabled
+    std::unique_ptr<V4L2Output> vcam_output;
+    bool vcam_opened = false;
+    
+    if (vcam_enabled) {
+        cout << "Initializing virtual camera at: " << vcam_device << "\n";
+        vcam_output = std::make_unique<V4L2Output>(vcam_device, width, height);
+        if (vcam_output->open()) {
+            vcam_opened = true;
+            cout << "✅ Virtual camera enabled: " << vcam_device << "\n";
+        } else {
+            cout << "⚠️ Virtual camera failed to open, continuing without it\n";
+            vcam_output.reset();
+        }
+    }
 
     cout << "Loading U²-Net model with GPU acceleration...\n";
     
@@ -381,7 +414,18 @@ int main(int argc, char** argv) {
         // Optimized blending
         Mat output = fast_blend(frame, mask);
         
-        imshow(cuda_available ? "Background Removed (GPU)" : "Background Removed (CPU)", output);
+        // Write to virtual camera if enabled and open
+        if (vcam_enabled && vcam_opened && vcam_output) {
+            if (!vcam_output->writeFrame(output)) {
+                cerr << "⚠️ Virtual camera write failed\n";
+            }
+        }
+        
+        // Show window with appropriate title
+        string window_title = cuda_available ? 
+            (vcam_enabled ? "Background Removed (GPU + Virtual Camera)" : "Background Removed (GPU)") :
+            (vcam_enabled ? "Background Removed (CPU + Virtual Camera)" : "Background Removed (CPU)");
+        imshow(window_title, output);
         if (waitKey(1) == 27) break;  // ESC
         
         // Enhanced performance monitoring with GPU memory
@@ -396,7 +440,10 @@ int main(int argc, char** argv) {
                 gpu_manager.printMemoryStats();
             }
             
-            cout << (cuda_available ? "🚀 GPU" : "⚡ CPU") << " Performance: " 
+            string perf_label = cuda_available ? 
+                (vcam_enabled ? "GPU + VCam" : "GPU") : 
+                (vcam_enabled ? "CPU + VCam" : "CPU");
+            cout << "🚀 " << perf_label << " Performance: " 
                  << fps_real << " FPS (" << frame_count << " frames in "
                  << duration.count() << "ms)" << endl;
             
@@ -408,5 +455,11 @@ int main(int argc, char** argv) {
 
     cap.release();
     destroyAllWindows();
+    
+    // Clean up virtual camera
+    if (vcam_output) {
+        vcam_output->close();
+    }
+    
     return 0;
 }
