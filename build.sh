@@ -296,101 +296,120 @@ check_nvcc() {
 check_opencv_cuda() {
     log_header "OpenCV CUDA Support Detection"
     
-    if ! pkg-config --exists opencv4; then
-        log_error "OpenCV4 is not installed or not found in PKG_CONFIG_PATH"
-        log_info "Install OpenCV4 development packages:"
-        echo "  Ubuntu/Debian: sudo apt install libopencv-dev python3-opencv"
-        echo "  CentOS/RHEL: sudo yum install opencv-devel python3-opencv"
-        return 1
-    fi
-    
-    # Get OpenCV version and build information
-    local opencv_version=$(pkg-config --modversion opencv4)
-    log_info "OpenCV version: $opencv_version"
-    
-    # Get OpenCV build information
-    local opencv_build_info=$(pkg-config --libs opencv4 2>/dev/null | grep -o "\-lopencv_\w*" | head -5)
-    log_info "OpenCV modules: $opencv_build_info"
-    
-    # Check if OpenCV has CUDA modules via pkg-config
-    if pkg-config --libs opencv4 2>/dev/null | grep -q "cudart\|cublas\|cufft"; then
-        log_success "✅ OpenCV libraries linked to CUDA runtime"
+    # Check for system OpenCV
+    local system_opencv_available=false
+    if pkg-config --exists opencv4; then
+        local system_opencv_version=$(pkg-config --modversion opencv4)
+        log_info "System OpenCV version: $system_opencv_version"
+        system_opencv_available=true
     else
-        log_warning "⚠️  OpenCV libraries not linked to CUDA runtime"
+        log_info "System OpenCV4 not found in PKG_CONFIG_PATH"
     fi
     
-    # Check CUDA version in OpenCV build
-    if pkg-config --cflags opencv4 2>/dev/null | grep -q "CUDA"; then
-        log_success "✅ OpenCV compiled with CUDA support"
-    else
-        log_warning "⚠️  OpenCV may not be compiled with CUDA support"
-    fi
+    # Check multiple Python environments for CUDA-enabled OpenCV
+    local cuda_opencv_found=false
+    local cuda_opencv_env=""
+    local cuda_opencv_version=""
     
-    # Enhanced Python OpenCV CUDA detection
-    local python_cuda_result=$(python3 -c "
-import sys
-import importlib.util
+    for python_exe in "python3" "python"; do
+        # Check current Python environment
+        local cuda_result=$($python_exe -c "
 try:
     import cv2
     if hasattr(cv2, 'cuda'):
-        # Check CUDA module
-        cuda_modules = [attr for attr in dir(cv2.cuda) if not attr.startswith('_')]
-        print(f'CUDA modules: {len(cuda_modules)}')
-        
-        # Test CUDA device count
         if hasattr(cv2.cuda, 'getCudaEnabledDeviceCount'):
             cuda_count = cv2.cuda.getCudaEnabledDeviceCount()
-            print(f'CUDA devices: {cuda_count}')
-            
-            if cuda_count > 0:
-                # Test CUDA info
-                if hasattr(cv2.cuda, 'DeviceInfo'):
-                    device_info = cv2.cuda.DeviceInfo()
-                    print(f'Device: {device_info.name()}')
-                    print(f'Memory: {device_info.totalMemory()} bytes')
-            
-            print('CUDA_AVAILABLE=True')
+            print(f'CURRENT_PYTHON_CUDA:{cuda_count}:{cv2.__version__}:{cv2.__file__}')
         else:
-            print('CUDA_AVAILABLE=False')
+            print('CURRENT_PYTHON_CUDA:0:no_getCudaEnabledDeviceCount:unknown')
     else:
-        print('CUDA_AVAILABLE=False')
+        print('CURRENT_PYTHON_CUDA:0:no_cuda_module:unknown')
 except Exception as e:
-    print(f'ERROR: {str(e)}')
-    print('CUDA_AVAILABLE=False')
+    print(f'CURRENT_PYTHON_CUDA:0:ERROR:{str(e)}')
 " 2>/dev/null)
-    
-    if echo "$python_cuda_result" | grep -q "CUDA_AVAILABLE=True"; then
-        local cuda_modules=$(echo "$python_cuda_result" | grep "CUDA modules:" | cut -d':' -f2 | tr -d ' ')
-        local cuda_devices=$(echo "$python_cuda_result" | grep "CUDA devices:" | cut -d':' -f2 | tr -d ' ')
-        local device_name=$(echo "$python_cuda_result" | grep "Device:" | cut -d':' -f2- | sed 's/^ *//')
         
-        log_success "✅ OpenCV CUDA support detected!"
-        log_info "CUDA modules available: $cuda_modules"
-        log_info "CUDA devices: $cuda_devices"
-        if [[ -n "$device_name" ]]; then
-            log_info "CUDA device: $device_name"
+        if [[ -n "$cuda_result" ]]; then
+            local cuda_count=$(echo "$cuda_result" | cut -d':' -f2)
+            local opencv_version=$(echo "$cuda_result" | cut -d':' -f3)
+            local opencv_path=$(echo "$cuda_result" | cut -d':' -f4)
+            
+            if [[ "$cuda_count" != "0" ]]; then
+                log_success "✅ CUDA-enabled OpenCV found in $python_exe environment!"
+                log_info "OpenCV version: $opencv_version"
+                log_info "CUDA devices: $cuda_count"
+                log_info "Path: $opencv_path"
+                cuda_opencv_found=true
+                cuda_opencv_version="$opencv_version"
+                break
+            fi
         fi
-        
-        OPENCV_CUDA_SUPPORT=true
-    else
-        log_error "❌ OpenCV CUDA support not available"
-        log_info "Error details:"
-        echo "$python_cuda_result" | grep "ERROR:" || echo "No CUDA modules found"
-        
-        log_info "To enable CUDA support:"
-        echo "  1. Install CUDA-enabled OpenCV:"
-        echo "     pip install opencv-contrib-python"
-        echo "  2. Or build OpenCV from source with CUDA flags"
-        echo "  3. Or install system package with CUDA support"
-        return 1
+    done
+    
+    # Also check common Conda environments
+    if [[ "$cuda_opencv_found" == "false" ]]; then
+        for conda_env in opencv_cuda12 opencv_env py39 py310 py311 py312; do
+            if [[ -f "$HOME/miniconda3/envs/$conda_env/bin/python" ]]; then
+                local conda_cuda_result=$($HOME/miniconda3/envs/$conda_env/bin/python -c "
+try:
+    import cv2
+    if hasattr(cv2, 'cuda'):
+        if hasattr(cv2.cuda, 'getCudaEnabledDeviceCount'):
+            cuda_count = cv2.cuda.getCudaEnabledDeviceCount()
+            print(f'CONDA_CUDA:{cuda_count}:{cv2.__version__}:{cv2.__file__}')
+        else:
+            print('CONDA_CUDA:0:no_getCudaEnabledDeviceCount:unknown')
+    else:
+        print('CONDA_CUDA:0:no_cuda_module:unknown')
+except Exception as e:
+    print(f'CONDA_CUDA:0:ERROR:{str(e)}')
+" 2>/dev/null)
+                
+                if [[ -n "$conda_cuda_result" ]]; then
+                    local cuda_count=$(echo "$conda_cuda_result" | cut -d':' -f2)
+                    local opencv_version=$(echo "$conda_cuda_result" | cut -d':' -f3)
+                    local opencv_path=$(echo "$conda_cuda_result" | cut -d':' -f4)
+                    
+                    if [[ "$cuda_count" != "0" ]]; then
+                        log_success "✅ CUDA-enabled OpenCV found in Conda environment: $conda_env!"
+                        log_info "OpenCV version: $opencv_version"
+                        log_info "CUDA devices: $cuda_count"
+                        log_info "Path: $opencv_path"
+                        cuda_opencv_found=true
+                        cuda_opencv_env="$conda_env"
+                        cuda_opencv_version="$opencv_version"
+                        break
+                    fi
+                fi
+            fi
+        done
     fi
     
-    # Verify library linking
-    local opencv_libs=$(ldd $(python3 -c "import cv2; print(cv2.__file__)" 2>/dev/null | xargs dirname 2>/dev/null)/cv2*.so 2>/dev/null | grep "libcuda\|libcudart" || echo "")
-    if [[ -n "$opencv_libs" ]]; then
-        log_success "✅ OpenCV properly linked to CUDA libraries"
+    if [[ "$cuda_opencv_found" == "true" ]]; then
+        log_success "🎉 OpenCV CUDA support is available!"
+        OPENCV_CUDA_SUPPORT=true
+        
+        if [[ -n "$cuda_opencv_env" ]]; then
+            log_info "To use CUDA-enabled OpenCV, run:"
+            echo "  source ~/miniconda3/bin/activate $cuda_opencv_env"
+        fi
     else
-        log_warning "⚠️  OpenCV may not be properly linked to CUDA libraries"
+        log_error "❌ OpenCV CUDA support not available in any Python environment"
+        log_info "Available options:"
+        
+        if [[ "$system_opencv_available" == "true" ]]; then
+            echo "  • System OpenCV $system_opencv_version (CPU only)"
+        fi
+        
+        echo "  • Install CUDA-enabled OpenCV in Conda:"
+        echo "    conda create -n opencv_cuda12 python=3.12 opencv cudatoolkit=12.1"
+        echo "    conda activate opencv_cuda12"
+        echo ""
+        echo "  • Or install CUDA-enabled OpenCV with pip:"
+        echo "    pip install opencv-contrib-python"
+        echo ""
+        
+        # Still set OpenCV_CUDA_SUPPORT to false but don't fail
+        log_info "Build will continue with CPU-only OpenCV support"
     fi
     
     return 0
@@ -408,103 +427,112 @@ check_python_opencv_shadowing() {
     # Check for Conda environment
     if [[ -n "$CONDA_DEFAULT_ENV" ]]; then
         log_info "Conda environment: $CONDA_DEFAULT_ENV"
-        
-        # Check if Conda OpenCV is shadowing system OpenCV
-        local conda_opencv_path=$(python3 -c "import cv2; print(cv2.__file__)" 2>/dev/null || echo "")
-        if [[ "$conda_opencv_path" == *"conda"* ]] || [[ "$conda_opencv_path" == *"site-packages"* ]]; then
-            local conda_opencv_version=$(python3 -c "import cv2; print(cv2.__version__)" 2>/dev/null || echo "Unknown")
-            local system_opencv_version=$(pkg-config --modversion opencv4 2>/dev/null || echo "Not found")
-            
-            log_warning "⚠️  Conda OpenCV detected - potential shadowing issue"
-            log_info "Conda OpenCV: $conda_opencv_path (v$conda_opencv_version)"
-            log_info "System OpenCV: $system_opencv_version"
-            
-            if [[ "$conda_opencv_version" != "$system_opencv_version" ]] && [[ "$system_opencv_version" != "Not found" ]]; then
-                log_error "❌ Version mismatch detected!"
-                log_info "This can cause runtime issues and library conflicts."
+    fi
+    
+    # Check for common Conda locations
+    local conda_python_path=""
+    local conda_opencv_path=""
+    
+    # Try to find OpenCV in common Conda locations
+    for conda_env in opencv_cuda12 opencv_env py39 py310 py311 py312; do
+        if [[ -f "$HOME/miniconda3/envs/$conda_env/bin/python" ]]; then
+            local test_opencv=$(HOME/miniconda3/envs/$conda_env/bin/python -c "import cv2; print('found')" 2>/dev/null || echo "notfound")
+            if [[ "$test_opencv" == "found" ]]; then
+                local opencv_version=$(HOME/miniconda3/envs/$conda_env/bin/python -c "import cv2; print(cv2.__version__)" 2>/dev/null || echo "unknown")
+                local opencv_file=$(HOME/miniconda3/envs/$conda_env/bin/python -c "import cv2; print(cv2.__file__)" 2>/dev/null || echo "unknown")
+                local cuda_devices=$(HOME/miniconda3/envs/$conda_env/bin/python -c "import cv2; print(cv2.cuda.getCudaEnabledDeviceCount())" 2>/dev/null || echo "0")
                 
-                # Offer automatic fix
-                echo ""
-                log_info "Would you like to uninstall Conda OpenCV to use system OpenCV? (y/N)"
-                read -t 10 -r response || response="n"
-                
-                if [[ "$response" =~ ^[Yy]$ ]]; then
-                    log_info "Uninstalling Conda OpenCV packages..."
-                    if python3 -m pip uninstall -y opencv-python opencv-contrib-python opencv-python-headless 2>/dev/null; then
-                        log_success "✅ Conda OpenCV packages uninstalled"
-                        
-                        # Verify system OpenCV is now used
-                        local new_path=$(python3 -c "import cv2; print(cv2.__file__)" 2>/dev/null || echo "")
-                        if [[ "$new_path" != *"site-packages"* ]]; then
-                            log_success "✅ System OpenCV is now being used"
-                        fi
-                    else
-                        log_error "Failed to uninstall Conda OpenCV packages"
+                if [[ "$cuda_devices" != "0" ]] && [[ "$cuda_devices" != "AttributeError" ]]; then
+                    log_success "✅ CUDA-enabled OpenCV found in Conda environment: $conda_env"
+                    log_info "OpenCV version: $opencv_version"
+                    log_info "CUDA devices: $cuda_devices"
+                    log_info "Path: $opencv_file"
+                    
+                    # Check if current Python is using this environment
+                    local current_opencv=$(python3 -c "import cv2; print(cv2.__file__)" 2>/dev/null || echo "notfound")
+                    if [[ "$current_opencv" == "notfound" ]] || [[ "$current_opencv" != *"conda"* ]]; then
+                        log_info "Current Python not using Conda OpenCV - this is normal"
+                        log_info "To use CUDA-enabled OpenCV, activate Conda environment:"
+                        echo "  source ~/miniconda3/bin/activate $conda_env"
                     fi
-                else
-                    log_info "Skipping automatic fix - manual intervention required"
                 fi
             fi
         fi
-    fi
+    done
     
-    # Get Python OpenCV info
+    # Get current Python OpenCV info
     local python_opencv_path=$(python3 -c "import cv2; print(cv2.__file__)" 2>/dev/null || echo "")
     local python_opencv_version=$(python3 -c "import cv2; print(cv2.__version__)" 2>/dev/null || echo "Not found")
     
     # Get system OpenCV info
     local system_opencv_version=$(pkg-config --modversion opencv4 2>/dev/null || echo "Not found")
     
-    log_info "Python OpenCV path: $python_opencv_path"
-    log_info "Python OpenCV version: $python_opencv_version"
+    log_info "Current Python OpenCV path: $python_opencv_path"
+    log_info "Current Python OpenCV version: $python_opencv_version"
     log_info "System OpenCV version: $system_opencv_version"
     
-    # Enhanced shadowing detection
+    # Check if we have OpenCV available at all
+    if [[ -z "$python_opencv_path" ]]; then
+        log_warning "⚠️  OpenCV not found in current Python environment"
+        log_info "Available Python OpenCV environments:"
+        echo "  • Current (system): Not available"
+        
+        # Check for Conda environments with OpenCV
+        local conda_found=false
+        for conda_env in opencv_cuda12 opencv_env py39 py310 py311 py312; do
+            if [[ -f "$HOME/miniconda3/envs/$conda_env/bin/python" ]]; then
+                local test_opencv=$(HOME/miniconda3/envs/$conda_env/bin/python -c "import cv2; print('found')" 2>/dev/null || echo "notfound")
+                if [[ "$test_opencv" == "found" ]]; then
+                    local opencv_version=$(HOME/miniconda3/envs/$conda_env/bin/python -c "import cv2; print(cv2.__version__)" 2>/dev/null || echo "unknown")
+                    local cuda_devices=$(HOME/miniconda3/envs/$conda_env/bin/python -c "import cv2; print(cv2.cuda.getCudaEnabledDeviceCount())" 2>/dev/null || echo "0")
+                    local cuda_status=$(if [[ "$cuda_devices" != "0" ]] && [[ "$cuda_devices" != "AttributeError" ]]; then echo "✅"; else echo "❌"; fi)
+                    echo "  • Conda ($conda_env): $opencv_version $cuda_status"
+                    conda_found=true
+                fi
+            fi
+        done
+        
+        if [[ "$conda_found" == "true" ]]; then
+            log_info "To use OpenCV with CUDA, activate a Conda environment:"
+            echo "  source ~/miniconda3/bin/activate opencv_cuda12"
+            echo "  # Then run this build script again"
+        else
+            log_error "❌ No OpenCV found in any Python environment"
+            log_info "Install OpenCV:"
+            echo "  pip install opencv-contrib-python"
+            echo "  # Or for CUDA support:"
+            echo "  conda create -n opencv_cuda12 python=3.12 opencv cudatoolkit=12.1"
+            echo "  conda activate opencv_cuda12"
+            return 1
+        fi
+    else
+        log_success "✅ OpenCV found in current Python environment"
+    fi
+    
+    # Check for shadowing issues only if we have both system and Python OpenCV
     if [[ "$python_opencv_path" == *"site-packages"* ]] && [[ "$system_opencv_version" != "Not found" ]]; then
         if [[ "$python_opencv_version" != "$system_opencv_version" ]]; then
             log_warning "⚠️  OpenCV version mismatch detected!"
             log_warning "System OpenCV ($system_opencv_version) vs Python OpenCV ($python_opencv_version)"
-            log_error "This will cause module shadowing and potential runtime issues."
+            log_info "This can cause module shadowing and potential runtime issues."
             
-            # Check for multiple OpenCV installations
-            local opencv_count=$(python3 -c "import site; print(len(site.getsitepackages()))" 2>/dev/null || echo "1")
-            if [[ $opencv_count -gt 1 ]]; then
-                log_warning "Multiple Python site-packages directories detected"
+            # Check if this is a Conda installation (usually OK)
+            if [[ "$python_opencv_path" == *"conda"* ]] || [[ "$python_opencv_path" == *"$HOME/miniconda3"* ]]; then
+                log_info "Python OpenCV appears to be from Conda (OK for development)"
+                log_info "System OpenCV is available for system tools if needed"
+            else
+                log_warning "This may cause conflicts between system tools and Python scripts"
+                
+                PYTHON_OPENCV_ISSUES=true
+                return 1
             fi
-            
-            PYTHON_OPENCV_ISSUES=true
-            
-            # Provide detailed solutions
-            log_info "Solutions to resolve this issue:"
-            echo "  1. Remove pip-installed OpenCV to use system OpenCV:"
-            echo "     python3 -m pip uninstall opencv-python opencv-contrib-python opencv-python-headless"
-            echo ""
-            echo "  2. Install matching system OpenCV version via pip:"
-            echo "     python3 -m pip install opencv-contrib-python==$system_opencv_version"
-            echo ""
-            echo "  3. Use a virtual environment:"
-            echo "     python3 -m venv opencv_env && source opencv_env/bin/activate"
-            echo ""
-            echo "  4. For Conda users, create a clean environment:"
-            echo "     conda create -n opencv_env python=3.9"
-            echo "     conda activate opencv_env"
-            echo "     conda install opencv"
-            
-            return 1
         else
             log_success "✅ OpenCV versions match between system and Python"
         fi
     elif [[ "$python_opencv_path" == *"site-packages"* ]] && [[ "$system_opencv_version" == "Not found" ]]; then
-        log_warning "⚠️  Only Python OpenCV found - system OpenCV not available"
-        log_info "Consider installing system OpenCV for better performance:"
-        echo "  Ubuntu/Debian: sudo apt install libopencv-dev python3-opencv"
-    elif [[ -z "$python_opencv_path" ]]; then
-        log_error "❌ OpenCV not found in Python environment"
-        log_info "Install OpenCV:"
-        echo "  pip install opencv-contrib-python"
-        return 1
+        log_info "✅ Only Python OpenCV found - system OpenCV not available (this is fine)"
     else
-        log_success "✅ Python OpenCV is using system libraries"
+        log_success "✅ OpenCV environment looks good"
     fi
     
     return 0
@@ -513,6 +541,15 @@ check_python_opencv_shadowing() {
 # Main build function
 main() {
     log_header "Background Remover Lite - Enhanced Build Script"
+    
+    # Check if we're in a Conda environment
+    local in_conda=false
+    if [[ -n "$CONDA_DEFAULT_ENV" ]]; then
+        in_conda=true
+        log_info "Running in Conda environment: $CONDA_DEFAULT_ENV"
+    else
+        log_info "Running in system environment"
+    fi
     
     # Environment checks
     check_nvidia_environment
@@ -541,13 +578,14 @@ main() {
     
     if [[ "$OPENCV_CUDA_SUPPORT" == "true" ]]; then
         CMAKE_FLAGS="-DWITH_CUDA=ON -DCUDA_ARCH_BIN=$CUDA_ARCH_BIN"
-        log_info "CUDA support enabled in CMake"
+        log_success "CUDA support enabled in CMake"
     else
         CMAKE_FLAGS="-DWITH_CUDA=OFF"
-        log_info "CUDA support disabled"
+        log_warning "CUDA support disabled - building CPU-only version"
     fi
     
     # Run CMake
+    log_info "Running: cmake $CMAKE_FLAGS .."
     if cmake $CMAKE_FLAGS ..; then
         log_success "CMake configuration successful"
     else
@@ -566,6 +604,10 @@ main() {
         log_success "Build successful"
     else
         log_error "Build failed"
+        log_info "Common build issues and solutions:"
+        echo "  • Missing OpenCV: sudo apt install libopencv-dev"
+        echo "  • CUDA issues: Re-run with --cuda-only or --cpu-only"
+        echo "  • CMake cache: rm -rf build && ./build.sh"
         exit 1
     fi
     
@@ -582,11 +624,22 @@ main() {
         echo "     Usage: ./bgremover_gpu or ./bgremover_gpu <video_file>"
     fi
     
+    if [[ ! -f "./bgremover" ]] && [[ ! -f "./bgremover_gpu" ]]; then
+        log_error "❌ No executables were created"
+        exit 1
+    fi
+    
     echo ""
     echo "Optional: Copy executables to the root directory:"
     echo "  cp build/bgremover .           # CPU version"
     if [[ -f "./bgremover_gpu" ]]; then
         echo "  cp build/bgremover_gpu .     # GPU version"
+    fi
+    
+    # Set library path for ONNX Runtime
+    if [[ -f "onnxruntime/lib/libonnxruntime.so" ]]; then
+        export LD_LIBRARY_PATH="$PWD/onnxruntime/lib:$LD_LIBRARY_PATH"
+        log_info "Added ONNX Runtime to LD_LIBRARY_PATH for GPU support"
     fi
     
     # Final status with comprehensive summary
@@ -645,7 +698,16 @@ main() {
         echo -e "${BOLD}Next steps for GPU acceleration:${NC}"
         echo "  1. Install NVIDIA drivers: https://www.nvidia.com/drivers"
         echo "  2. Install CUDA Toolkit: https://developer.nvidia.com/cuda-downloads"
-        echo "  3. Install CUDA-enabled OpenCV: pip install opencv-contrib-python"
+        
+        if [[ "$in_conda" == "true" ]]; then
+            echo "  3. Install CUDA-enabled OpenCV in Conda:"
+            echo "     conda install opencv cudatoolkit=12.1"
+        else
+            echo "  3. Install CUDA-enabled OpenCV:"
+            echo "     conda create -n opencv_cuda python=3.12 opencv cudatoolkit=12.1"
+            echo "     conda activate opencv_cuda"
+        fi
+        
         echo "  4. Re-run this build script"
     fi
     
@@ -657,6 +719,15 @@ main() {
         echo "  • Monitor GPU utilization during processing"
         echo "  • Consider adjusting blur strength for optimal performance"
         echo "  • Ensure adequate system RAM and GPU memory"
+    fi
+    
+    # Additional recommendations for mixed environments
+    if [[ "$in_conda" == "true" ]] && [[ "$OPENCV_CUDA_SUPPORT" == "true" ]]; then
+        echo ""
+        echo -e "${BOLD}CUDA Environment Setup:${NC}"
+        echo "  • Your Conda environment is ready for CUDA development"
+        echo "  • Always activate this environment when using OpenCV CUDA"
+        echo "  • Consider setting up other tools (PyTorch, ONNX Runtime) with CUDA"
     fi
 }
 
