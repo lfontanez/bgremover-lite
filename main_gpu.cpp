@@ -5,6 +5,10 @@
 #include <chrono>
 #include <vector>
 #include <memory>
+#include <cuda_runtime.h>
+#include <cuda_runtime_api.h>
+#include <driver_types.h>
+#include <cuda.h>
 
 using namespace cv;
 using namespace std;
@@ -70,11 +74,15 @@ public:
     std::vector<Ort::Value> preallocated_buffers;
     bool initialized = false;
     
+    BufferManager() : cpu_memory_info("Cpu", OrtArenaAllocator, 0, OrtMemTypeDefault) {
+        initialized = false;
+    }
+    
     void initialize() {
         if (initialized) return;
         
-        // Create CPU memory info (compatible with all ONNX Runtime versions)
-        cpu_memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+        // Ensure memory info is properly initialized
+        cpu_memory_info = Ort::MemoryInfo("Cpu", OrtArenaAllocator, 0, OrtMemTypeDefault);
         initialized = true;
         cout << "✅ Memory manager initialized (CPU mode)" << endl;
     }
@@ -267,6 +275,7 @@ int main(int argc, char** argv) {
     // Initialize GPU memory manager after session creation
     gpu_manager = GPUMemoryManager();
     
+    bool cuda_used = false;
     if (cuda_available) {
         cout << "🚀 GPU acceleration enabled!" << endl;
         gpu_manager.printMemoryStats("after model load");
