@@ -63,7 +63,7 @@ public:
         }
         
         // Open device in non-blocking mode (we'll use blocking I/O for video)
-        fd_ = open(device_path_.c_str(), O_WRONLY);
+        fd_ = ::open(device_path_.c_str(), O_WRONLY);
         if (fd_ < 0) {
             std::cerr << "V4L2Output: Failed to open device " << device_path_ 
                       << ": " << strerror(errno) << "\n";
@@ -260,6 +260,10 @@ private:
                 float G = bgr[1] / 255.0f;
                 float R = bgr[2] / 255.0f;
                 
+                // Calculate Y for the first pixel before using it in U/V calculation
+                float Y = wr * R + wg * G + wb * B;
+                Y = std::clamp(Y, 0.0f, 1.0f);
+                
                 float U = (B - Y) * u_max;
                 float V = (R - Y) * v_max;
                 
@@ -283,7 +287,7 @@ private:
      */
     void closeDevice() {
         if (fd_ >= 0) {
-            close(fd_);
+            ::close(fd_);
             fd_ = -1;
             is_open_ = false;
         }
