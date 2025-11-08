@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 # Suppress FindCUDA deprecation warnings
 if(POLICY CMP0146)
-    cmake_policy(SET CMP0146 NEW)  # Use NEW to suppress warnings, or OLD for old behavior
+    cmake_policy(SET CMP0146 NEW)
 endif()
 
 project(bgremover-lite LANGUAGES CXX)
