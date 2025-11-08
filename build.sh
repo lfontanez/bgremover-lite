@@ -341,16 +341,35 @@ main() {
     # Results
     log_header "Build Results"
     
-    echo "Available executables:"
+    echo "🏗️  Build Summary:"
+    echo ""
+    
     if [[ -f "./bgremover" ]]; then
         log_success "  📱 CPU Version: ./bgremover"
+        echo "     • Works on any system with x64 CPU"
+        echo "     • Performance: 1-5 FPS"
+        echo "     • Perfect for testing and fallback"
     fi
+    
     if [[ -f "./bgremover_gpu" ]]; then
         log_success "  🚀 GPU Version: ./bgremover_gpu"
+        echo "     • Requires NVIDIA GPU with CUDA"
+        echo "     • Performance: 25-30 FPS at 1080p"
+        echo "     • Recommended for production use"
+    fi
+    
+    echo ""
+    echo "📋 Usage Examples:"
+    if [[ -f "./bgremover" ]]; then
+        echo "  • CPU: ./bgremover --help"
+    fi
+    if [[ -f "./bgremover_gpu" ]]; then
+        echo "  • GPU: ./build/bgremover_gpu --help"
     fi
     
     if [[ ! -f "./bgremover" ]] && [[ ! -f "./bgremover_gpu" ]]; then
         log_error "❌ No executables were created"
+        log_info "   Check the build logs above for errors"
         exit 1
     fi
     
