@@ -1,11 +1,51 @@
 #include <onnxruntime_cxx_api.h>
 #include <opencv2/opencv.hpp>
 #include <iostream>
+#include <string>
 
 using namespace cv;
 using namespace std;
 
 Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "bgremover");
+
+// Function to display help and usage information
+void showUsage(const std::string& program_name) {
+    std::cout << "BGRemover Lite - CPU Background Removal\n";
+    std::cout << "Usage: " << program_name << " [OPTIONS] [video_source]\n";
+    std::cout << "\n";
+    std::cout << "Options:\n";
+    std::cout << "  -h, --help              Show this help message\n";
+    std::cout << "  --no-blur               Disable background blur\n";
+    std::cout << "  --no-background-blur    Disable background blur (alternative)\n";
+    std::cout << "  --blur-low              Use low blur intensity (7x7 kernel)\n";
+    std::cout << "  --blur-mid              Use medium blur intensity (15x15 kernel) [default]\n";
+    std::cout << "  --blur-high             Use high blur intensity (25x25 kernel)\n";
+    std::cout << "\n";
+    std::cout << "Arguments:\n";
+    std::cout << "  video_source            Video file path or device number (default: 0 for webcam)\n";
+    std::cout << "\n";
+    std::cout << "Examples:\n";
+    std::cout << "  " << program_name << "                    # Use webcam with default settings\n";
+    std::cout << "  " << program_name << " --no-blur          # Disable background blur\n";
+    std::cout << "  " << program_name << " --blur-high        # Use high blur intensity\n";
+    std::cout << "  " << program_name << " video.mp4          # Process video file\n";
+    std::cout << "  " << program_name << " 1                  # Use device 1 as input\n";
+}
+
+// Function to show current settings
+void showCurrentSettings(bool blur_enabled, const std::string& blur_level) {
+    std::cout << "Current settings:\n";
+    std::cout << "  Background blur: " << (blur_enabled ? "Enabled" : "Disabled") << "\n";
+    if (blur_enabled) {
+        std::cout << "  Blur intensity: " << blur_level << "\n";
+        Size kernel_size;
+        if (blur_level == "low") kernel_size = Size(7, 7);
+        else if (blur_level == "high") kernel_size = Size(25, 25);
+        else kernel_size = Size(15, 15);  // mid
+        std::cout << "  Kernel size: " << kernel_size.width << "x" << kernel_size.height << "\n";
+    }
+    std::cout << "\n";
+}
 
 // Run inference and return properly isolated mask
 Mat run_inference(Ort::Session& session, const Mat& img) {
@@ -52,14 +92,17 @@ Mat run_inference(Ort::Session& session, const Mat& img) {
 
 int main(int argc, char** argv) {
     // Default command-line arguments
-    string source = "0";
+    std::string source = "0";
     bool blur_enabled = true;
-    string blur_level = "mid";
+    std::string blur_level = "mid";
     
     // Parse command-line arguments
     for (int i = 1; i < argc; ++i) {
-        string arg = argv[i];
-        if (arg == "--no-blur" || arg == "--no-background-blur") {
+        std::string arg = argv[i];
+        if (arg == "-h" || arg == "--help") {
+            showUsage(argv[0]);
+            return 0;
+        } else if (arg == "--no-blur" || arg == "--no-background-blur") {
             blur_enabled = false;
         } else if (arg == "--blur-low") {
             blur_level = "low";
@@ -68,47 +111,28 @@ int main(int argc, char** argv) {
         } else if (arg == "--blur-high") {
             blur_level = "high";
         } else if (i == 1 && arg != "--no-blur" && arg != "--no-background-blur" && 
-                   arg != "--blur-low" && arg != "--blur-mid" && arg != "--blur-high") {
+                   arg != "--blur-low" && arg != "--blur-mid" && arg != "--blur-high" &&
+                   arg != "-h" && arg != "--help") {
             source = arg;  // This is the video source
         }
     }
     
-    // Display blur settings
-    cout << "Background blur settings:" << endl;
-    cout << "  Enabled: " << (blur_enabled ? "Yes" : "No") << endl;
-    if (blur_enabled) {
-        cout << "  Level: " << blur_level << endl;
-        Size kernel_size;
-        if (blur_level == "low") kernel_size = Size(7, 7);
-        else if (blur_level == "high") kernel_size = Size(25, 25);
-        else kernel_size = Size(15, 15);  // mid
-        cout << "  Kernel: " << kernel_size.width << "x" << kernel_size.height << endl;
-    }
-    cout << endl;
-    
-    // Show command-line options help
-    cout << "Command-line options:" << endl;
-    cout << "  [video_source]        Video file or device (default: 0 for webcam)" << endl;
-    cout << "  --no-blur             Disable background blur" << endl;
-    cout << "  --no-background-blur  Disable background blur (alternative)" << endl;
-    cout << "  --blur-low           Use low intensity blur (7x7 kernel)" << endl;
-    cout << "  --blur-mid           Use medium intensity blur (15x15 kernel, default)" << endl;
-    cout << "  --blur-high          Use high intensity blur (25x25 kernel)" << endl;
-    cout << endl;
+    // Show current settings
+    showCurrentSettings(blur_enabled, blur_level);
     
     VideoCapture cap;
     if (source == "0") {
-        cout << "Attempting to open webcam (device 0)...\n";
+        std::cout << "Attempting to open webcam (device 0)...\n";
         cap.open(0);
     } else {
-        cout << "Opening video file: " << source << "...\n";
+        std::cout << "Opening video file: " << source << "...\n";
         cap.open(source);
     }
     if (!cap.isOpened()) { 
-        cerr << "Cannot open video source: " << source << "\n";
+        std::cerr << "Cannot open video source: " << source << "\n";
         return 1; 
     }
-    cout << "Video source opened successfully!\n";
+    std::cout << "Video source opened successfully!\n";
     
     // Get video properties
     double fps = cap.get(CAP_PROP_FPS);
@@ -117,21 +141,21 @@ int main(int argc, char** argv) {
     
     // Performance advisory for high resolutions
     if (width * height >= 1920 * 1080) {
-        cout << "🔍 High resolution detected (" << width << "x" << height << ") - consider GPU version for optimal performance\n";
+        std::cout << "🔍 High resolution detected (" << width << "x" << height << ") - consider GPU version for optimal performance\n";
     } else if (width * height >= 1280 * 720) {
-        cout << "📺 HD resolution detected (" << width << "x" << height << ")\n";
+        std::cout << "📺 HD resolution detected (" << width << "x" << height << ")\n";
     }
     
-    cout << "Video properties - FPS: " << fps << ", Resolution: " 
+    std::cout << "Video properties - FPS: " << fps << ", Resolution: " 
          << width << "x" << height << "\n";
 
-    cout << "Loading U²-Net model...\n";
+    std::cout << "Loading U²-Net model...\n";
     Ort::SessionOptions opts;
     opts.SetIntraOpNumThreads(1);
     Ort::Session session(env, "models/u2net.onnx", opts);
-    cout << "Model loaded successfully!\n";
+    std::cout << "Model loaded successfully!\n";
 
-    cout << "Press ESC to quit\n";
+    std::cout << "Press ESC to quit\n";
     Mat frame;
     bool first_frame = true;
     
@@ -155,7 +179,7 @@ int main(int argc, char** argv) {
         if (frame.cols != width || frame.rows != height) {
             resize(frame, frame, Size(width, height));
             if (first_frame) {
-                cout << "📐 Resized input to: " << width << "x" << height << " for 1080p processing" << endl;
+                std::cout << "📐 Resized input to: " << width << "x" << height << " for processing" << endl;
             }
         }
         
@@ -169,7 +193,7 @@ int main(int argc, char** argv) {
         
         // Apply blur only if enabled
         if (blur_enabled && blur_kernel.width > 0) {
-            // Pre-allocate blurred frame for 1080p efficiency
+            // Pre-allocate blurred frame for efficiency
             if (first_frame || blurred.empty() || blurred.size() != frame.size()) {
                 blurred.create(frame.size(), frame.type());
             }
@@ -182,7 +206,7 @@ int main(int argc, char** argv) {
             output.create(frame.size(), frame.type());
         }
         
-        // Optimized pixel-level blend for 1080p
+        // Optimized pixel-level blend
         Mat mask_clean = (mask > 0.5);
         if (blur_enabled) {
             frame.copyTo(output, mask_clean);
@@ -193,11 +217,11 @@ int main(int argc, char** argv) {
         }
 
         // Create window title with blur settings
-        string blur_info = blur_enabled ? 
+        std::string blur_info = blur_enabled ? 
             (blur_level == "low" ? " (Low Blur)" : 
              blur_level == "high" ? " (High Blur)" : " (Mid Blur)") : 
             " (No Blur)";
-        string window_title = "1080p Background Removed (CPU)" + blur_info;
+        std::string window_title = "Background Removed (CPU)" + blur_info;
         imshow(window_title, output);
         if (waitKey(1) == 27) break;  // ESC
         
@@ -214,7 +238,7 @@ int main(int argc, char** argv) {
     output.release();
     blurred.release();
     
-    cout << "🧹 1080p CPU processing cleanup completed" << endl;
+    std::cout << "🧹 CPU processing cleanup completed" << endl;
     
     return 0;
 }

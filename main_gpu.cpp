@@ -5,6 +5,7 @@
 #include <chrono>
 #include <vector>
 #include <memory>
+#include <string>
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
 #include <driver_types.h>
@@ -15,6 +16,54 @@ using namespace cv;
 using namespace std;
 
 Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "bgremover-gpu");
+
+// Function to display help and usage information
+void showUsage(const std::string& program_name) {
+    std::cout << "BGRemover Lite - GPU-Accelerated Background Removal\n";
+    std::cout << "Usage: " << program_name << " [OPTIONS] [video_source]\n";
+    std::cout << "\n";
+    std::cout << "Options:\n";
+    std::cout << "  -h, --help              Show this help message\n";
+    std::cout << "  -v, --vcam              Enable virtual camera output\n";
+    std::cout << "  --vcam-device DEVICE    Virtual camera device path (default: /dev/video2)\n";
+    std::cout << "  --no-blur               Disable background blur\n";
+    std::cout << "  --no-background-blur    Disable background blur (alternative)\n";
+    std::cout << "  --blur-low              Use low blur intensity (7x7 kernel)\n";
+    std::cout << "  --blur-mid              Use medium blur intensity (15x15 kernel) [default]\n";
+    std::cout << "  --blur-high             Use high blur intensity (25x25 kernel)\n";
+    std::cout << "  --no-vcam               Disable virtual camera output\n";
+    std::cout << "\n";
+    std::cout << "Arguments:\n";
+    std::cout << "  video_source            Video file path or device number (default: 0 for webcam)\n";
+    std::cout << "\n";
+    std::cout << "Examples:\n";
+    std::cout << "  " << program_name << "                    # Use webcam with default settings\n";
+    std::cout << "  " << program_name << " --vcam             # Enable virtual camera\n";
+    std::cout << "  " << program_name << " --no-blur          # Disable background blur\n";
+    std::cout << "  " << program_name << " --blur-high        # Use high blur intensity\n";
+    std::cout << "  " << program_name << " video.mp4          # Process video file\n";
+    std::cout << "  " << program_name << " 1 --vcam-device /dev/video3  # Custom devices\n";
+}
+
+// Function to show current settings
+void showCurrentSettings(bool blur_enabled, const std::string& blur_level, 
+                        bool vcam_enabled, const std::string& vcam_device) {
+    std::cout << "Current settings:\n";
+    std::cout << "  Background blur: " << (blur_enabled ? "Enabled" : "Disabled") << "\n";
+    if (blur_enabled) {
+        std::cout << "  Blur intensity: " << blur_level << "\n";
+        cv::Size kernel_size;
+        if (blur_level == "low") kernel_size = cv::Size(7, 7);
+        else if (blur_level == "high") kernel_size = cv::Size(25, 25);
+        else kernel_size = cv::Size(15, 15);  // mid
+        std::cout << "  Kernel size: " << kernel_size.width << "x" << kernel_size.height << "\n";
+    }
+    std::cout << "  Virtual camera: " << (vcam_enabled ? "Enabled" : "Disabled") << "\n";
+    if (vcam_enabled) {
+        std::cout << "  Virtual camera device: " << vcam_device << "\n";
+    }
+    std::cout << "\n";
+}
 
 // GPU Memory Management and Performance Monitoring
 class GPUMemoryManager {
@@ -39,24 +88,24 @@ public:
             if (error == cudaSuccess) {
                 double total_gb = total_memory / (1024.0 * 1024.0 * 1024.0);
                 double free_gb = free_memory / (1024.0 * 1024.0 * 1024.0);
-                cout << "✅ CUDA runtime initialized successfully" << endl;
-                cout << "✅ GPU Memory: " << free_gb << "GB free / " 
-                     << total_gb << "GB total" << endl;
+                std::cout << "✅ CUDA runtime initialized successfully" << std::endl;
+                std::cout << "✅ GPU Memory: " << free_gb << "GB free / " 
+                     << total_gb << "GB total" << std::endl;
             } else {
-                cout << "⚠️  CUDA initialized but memory query failed: " 
-                     << cudaGetErrorString(error) << endl;
+                std::cout << "⚠️  CUDA initialized but memory query failed: " 
+                     << cudaGetErrorString(error) << std::endl;
                 // Still set cuda_available to true since CUDA works
                 cuda_available = true;
             }
         } else {
             cuda_available = false;
-            cout << "⚠️  CUDA runtime not available" << endl;
+            std::cout << "⚠️  CUDA runtime not available" << std::endl;
         }
     }
     
-    void printMemoryStats(const string& label = "") {
+    void printMemoryStats(const std::string& label = "") {
         if (!cuda_available) {
-            cout << "GPU Memory " << label << ": Not available (CPU mode)" << endl;
+            std::cout << "GPU Memory " << label << ": Not available (CPU mode)" << std::endl;
             return;
         }
         
@@ -66,17 +115,17 @@ public:
             double used_gb = (current_total - current_free) / (1024.0 * 1024.0 * 1024.0);
             double free_gb = current_free / (1024.0 * 1024.0 * 1024.0);
             double total_gb = current_total / (1024.0 * 1024.0 * 1024.0);
-            cout << "GPU Memory " << label << ": " 
+            std::cout << "GPU Memory " << label << ": " 
                  << used_gb << "GB used / " << free_gb << "GB free / " 
-                 << total_gb << "GB total" << endl;
+                 << total_gb << "GB total" << std::endl;
         } else {
             // Use cached values if current query fails
             double used_gb = (total_memory - free_memory) / (1024.0 * 1024.0 * 1024.0);
             double free_gb = free_memory / (1024.0 * 1024.0 * 1024.0);
             double total_gb = total_memory / (1024.0 * 1024.0 * 1024.0);
-            cout << "GPU Memory " << label << ": " 
+            std::cout << "GPU Memory " << label << ": " 
                  << used_gb << "GB used / " << free_gb << "GB free / " 
-                 << total_gb << "GB total (cached)" << endl;
+                 << total_gb << "GB total (cached)" << std::endl;
         }
     }
     
@@ -105,8 +154,8 @@ public:
         if (cuda_available) {
             cudaError_t error = cudaMemGetInfo(&free_memory, &total_memory);
             if (error != cudaSuccess) {
-                cout << "⚠️  Failed to update memory info: " 
-                     << cudaGetErrorString(error) << endl;
+                std::cout << "⚠️  Failed to update memory info: " 
+                     << cudaGetErrorString(error) << std::endl;
             }
         }
     }
@@ -126,9 +175,9 @@ public:
         if (initialized) return;
         
         if (cuda_available) {
-            cout << "✅ Memory manager initialized (GPU acceleration enabled via ONNX Runtime)" << endl;
+            std::cout << "✅ Memory manager initialized (GPU acceleration enabled via ONNX Runtime)" << std::endl;
         } else {
-            cout << "✅ Memory manager initialized (CPU mode)" << endl;
+            std::cout << "✅ Memory manager initialized (CPU mode)" << std::endl;
         }
         
         initialized = true;
@@ -153,7 +202,7 @@ private:
 static BufferManager buffer_manager;
 
 // ONNX Runtime inference with memory management
-Mat run_inference(Ort::Session& session, const Mat& img, bool cuda_available) {
+cv::Mat run_inference(Ort::Session& session, const cv::Mat& img, bool cuda_available) {
     auto start_time = std::chrono::high_resolution_clock::now();
     
     // Initialize memory manager with CUDA availability
@@ -161,12 +210,12 @@ Mat run_inference(Ort::Session& session, const Mat& img, bool cuda_available) {
     Ort::MemoryInfo mem_info = buffer_manager.getMemoryInfo();
     
     // Preprocess on CPU (always, for compatibility)
-    Mat resized;
-    resize(img, resized, Size(320, 320));
+    cv::Mat resized;
+    cv::resize(img, resized, cv::Size(320, 320));
     resized.convertTo(resized, CV_32F, 1.0f / 255.0f);
-    Mat blob = dnn::blobFromImage(resized);
+    cv::Mat blob = cv::dnn::blobFromImage(resized);
     
-    array<int64_t, 4> shape = {1, 3, 320, 320};
+    std::array<int64_t, 4> shape = {1, 3, 320, 320};
     Ort::AllocatorWithDefaultOptions allocator;
     
     // Simplified GPU memory check - we have 15GB VRAM, should be plenty
@@ -176,9 +225,9 @@ Mat run_inference(Ort::Session& session, const Mat& img, bool cuda_available) {
     if (cuda_available) {
         // For RTX 4070 Ti SUPER with 15GB, we should always have enough memory
         if (gpu_manager.hasSufficientMemory(100 * 1024 * 1024)) { // 100MB minimum
-            cout << "✅ GPU memory sufficient (" << required_mb << "MB required)" << endl;
+            std::cout << "✅ GPU memory sufficient (" << required_mb << "MB required)" << std::endl;
         } else {
-            cout << "⚠️  Memory check failed, but proceeding with GPU" << endl;
+            std::cout << "⚠️  Memory check failed, but proceeding with GPU" << std::endl;
         }
     }
     
@@ -208,17 +257,17 @@ Mat run_inference(Ort::Session& session, const Mat& img, bool cuda_available) {
     
     // Extract result
     float* data = outputs.front().GetTensorMutableData<float>();
-    Mat mask(320, 320, CV_32F, data);
-    resize(mask, mask, img.size());
+    cv::Mat mask(320, 320, CV_32F, data);
+    cv::resize(mask, mask, img.size());
 
     // Process result with proper mask isolation
-    normalize(mask, mask, 0.0, 1.0, NORM_MINMAX);
+    cv::normalize(mask, mask, 0.0, 1.0, cv::NORM_MINMAX);
     
     // Sharpen the separation between person and background
-    threshold(mask, mask, 0.4, 1.0, THRESH_BINARY);
+    cv::threshold(mask, mask, 0.4, 1.0, cv::THRESH_BINARY);
     
     // Apply soft edges to prevent harsh borders
-    GaussianBlur(mask, mask, Size(7, 7), 0);
+    cv::GaussianBlur(mask, mask, cv::Size(7, 7), 0);
     
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
@@ -233,10 +282,10 @@ Mat run_inference(Ort::Session& session, const Mat& img, bool cuda_available) {
         if (cuda_available) {
             gpu_manager.printMemoryStats();
         }
-        cout << (cuda_available ? "🚀 GPU" : "⚡ CPU") << " Performance: " 
+        std::cout << (cuda_available ? "🚀 GPU" : "⚡ CPU") << " Performance: " 
              << frame_count / 2.0 << " FPS | Inference: " 
              << inference_duration.count() << "ms | Total: " 
-             << duration.count() << "ms" << endl;
+             << duration.count() << "ms" << std::endl;
         frame_count = 0;
         last_print_time = end_time;
     }
@@ -245,25 +294,25 @@ Mat run_inference(Ort::Session& session, const Mat& img, bool cuda_available) {
 }
 
 // Optimized GPU/CPU processing with proper mask isolation
-Mat fast_blend(const Mat& frame, const Mat& mask) {
+cv::Mat fast_blend(const cv::Mat& frame, const cv::Mat& mask) {
     // Use moderate kernel for quality
-    Mat blurred;
-    GaussianBlur(frame, blurred, Size(15, 15), 0);
+    cv::Mat blurred;
+    cv::GaussianBlur(frame, blurred, cv::Size(15, 15), 0);
     
     // Clean, simple mask (0 or 255) - works with properly isolated mask
-    Mat mask_clean = (mask > 0.5) * 255;
+    cv::Mat mask_clean = (mask > 0.5) * 255;
     
     // Direct pixel-level blend - fastest and most reliable
-    Mat output = frame.clone();
+    cv::Mat output = frame.clone();
     for (int y = 0; y < frame.rows; y++) {
         for (int x = 0; x < frame.cols; x++) {
             uchar m = mask_clean.at<uchar>(y, x);
             if (m == 0) {
                 // Outside mask - use blurred background
-                output.at<Vec3b>(y, x) = blurred.at<Vec3b>(y, x);
+                output.at<cv::Vec3b>(y, x) = blurred.at<cv::Vec3b>(y, x);
             } else {
                 // Inside mask - use original (person in focus)
-                // output.at<Vec3b>(y, x) stays as original
+                // output.at<cv::Vec3b>(y, x) stays as original
             }
         }
     }
@@ -273,19 +322,24 @@ Mat fast_blend(const Mat& frame, const Mat& mask) {
 
 int main(int argc, char** argv) {
     // Default command-line arguments
-    string source = "0";
+    std::string source = "0";
     bool vcam_enabled = false;
-    string vcam_device = "/dev/video2";
+    std::string vcam_device = "/dev/video2";
     bool blur_enabled = true;
-    string blur_level = "mid";
+    std::string blur_level = "mid";
     
     // Parse command-line arguments
     for (int i = 1; i < argc; ++i) {
-        string arg = argv[i];
-        if (arg == "--vcam" || arg == "-v") {
+        std::string arg = argv[i];
+        if (arg == "-h" || arg == "--help") {
+            showUsage(argv[0]);
+            return 0;
+        } else if (arg == "--vcam" || arg == "-v") {
             vcam_enabled = true;
         } else if (arg == "--vcam-device" && i + 1 < argc) {
             vcam_device = argv[++i];
+        } else if (arg == "--no-vcam") {
+            vcam_enabled = false;
         } else if (arg == "--no-blur" || arg == "--no-background-blur") {
             blur_enabled = false;
         } else if (arg == "--blur-low") {
@@ -295,52 +349,43 @@ int main(int argc, char** argv) {
         } else if (arg == "--blur-high") {
             blur_level = "high";
         } else if (i == 1 && arg != "--vcam" && arg != "-v" && arg != "--vcam-device" &&
-                   arg != "--no-blur" && arg != "--no-background-blur" && 
-                   arg != "--blur-low" && arg != "--blur-mid" && arg != "--blur-high") {
+                   arg != "--no-vcam" && arg != "--no-blur" && arg != "--no-background-blur" && 
+                   arg != "--blur-low" && arg != "--blur-mid" && arg != "--blur-high" &&
+                   arg != "-h" && arg != "--help") {
             source = arg;  // This is the video source
         }
     }
     
-    // Display blur settings
-    cout << "Background blur settings:" << endl;
-    cout << "  Enabled: " << (blur_enabled ? "Yes" : "No") << endl;
-    if (blur_enabled) {
-        cout << "  Level: " << blur_level << endl;
-        Size kernel_size;
-        if (blur_level == "low") kernel_size = Size(7, 7);
-        else if (blur_level == "high") kernel_size = Size(25, 25);
-        else kernel_size = Size(15, 15);  // mid
-        cout << "  Kernel: " << kernel_size.width << "x" << kernel_size.height << endl;
-    }
-    cout << endl;
+    // Show current settings
+    showCurrentSettings(blur_enabled, blur_level, vcam_enabled, vcam_device);
     
-    VideoCapture cap;
+    cv::VideoCapture cap;
     if (source == "0") {
-        cout << "Attempting to open webcam (device 0) with GPU acceleration...\n";
+        std::cout << "Attempting to open webcam (device 0) with GPU acceleration...\n";
         cap.open(0);
     } else {
-        cout << "Opening video file: " << source << " with GPU acceleration...\n";
+        std::cout << "Opening video file: " << source << " with GPU acceleration...\n";
         cap.open(source);
     }
     if (!cap.isOpened()) { 
-        cerr << "Cannot open video source: " << source << "\n";
+        std::cerr << "Cannot open video source: " << source << "\n";
         return 1; 
     }
-    cout << "Video source opened successfully!\n";
+    std::cout << "Video source opened successfully!\n";
     
     // Get video properties
-    double fps = cap.get(CAP_PROP_FPS);
-    int width = cap.get(CAP_PROP_FRAME_WIDTH);
-    int height = cap.get(CAP_PROP_FRAME_HEIGHT);
+    double fps = cap.get(cv::CAP_PROP_FPS);
+    int width = cap.get(cv::CAP_PROP_FRAME_WIDTH);
+    int height = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
     
     // Performance advisory for high resolutions
     if (width * height >= 1920 * 1080) {
-        cout << "🎬 1080p HD processing - GPU acceleration recommended for real-time performance\n";
+        std::cout << "🎬 1080p HD processing - GPU acceleration recommended for real-time performance\n";
     } else if (width * height >= 1280 * 720) {
-        cout << "📺 HD resolution processing (" << width << "x" << height << ")\n";
+        std::cout << "📺 HD resolution processing (" << width << "x" << height << ")\n";
     }
     
-    cout << "Video properties - FPS: " << fps << ", Resolution: " 
+    std::cout << "Video properties - FPS: " << fps << ", Resolution: " 
          << width << "x" << height << "\n";
 
     // Initialize virtual camera if enabled
@@ -348,26 +393,26 @@ int main(int argc, char** argv) {
     bool vcam_opened = false;
     
     if (vcam_enabled) {
-        cout << "Initializing virtual camera at: " << vcam_device << "\n";
+        std::cout << "Initializing virtual camera at: " << vcam_device << "\n";
         
         // Always use 1080p for virtual camera output
         const int vcam_width = 1920;
         const int vcam_height = 1080;
         
-        cout << "🖥️ 1080p HD virtual camera: " << vcam_width << "x" << vcam_height << "\n";
+        std::cout << "🖥️ 1080p HD virtual camera: " << vcam_width << "x" << vcam_height << "\n";
         
         vcam_output = std::make_unique<V4L2Output>(vcam_device, vcam_width, vcam_height);
         if (vcam_output->open()) {
             vcam_opened = true;
-            cout << "✅ 1080p Virtual camera enabled: " << vcam_device << " (" 
+            std::cout << "✅ 1080p Virtual camera enabled: " << vcam_device << " (" 
                  << vcam_output->getSize().width << "x" << vcam_output->getSize().height << ")\n";
         } else {
-            cout << "⚠️ Virtual camera failed to open, continuing without it\n";
+            std::cout << "⚠️ Virtual camera failed to open, continuing without it\n";
             vcam_output.reset();
         }
     }
 
-    cout << "Loading U²-Net model with GPU acceleration...\n";
+    std::cout << "Loading U²-Net model with GPU acceleration...\n";
     
     // Configure session options
     Ort::SessionOptions session_options;
@@ -378,17 +423,17 @@ int main(int argc, char** argv) {
     bool cuda_available = false;
     try {
         auto providers = Ort::GetAvailableProviders();
-        cout << "Available ONNX Runtime providers: ";
+        std::cout << "Available ONNX Runtime providers: ";
         for (const auto& provider : providers) {
-            cout << provider << " ";
+            std::cout << provider << " ";
         }
-        cout << endl;
+        std::cout << std::endl;
         
         // Check if CUDA provider is available
         cuda_available = std::find(providers.begin(), providers.end(), "CUDAExecutionProvider") != providers.end();
         
         if (cuda_available) {
-            cout << "✅ CUDA execution provider available" << endl;
+            std::cout << "✅ CUDA execution provider available" << std::endl;
             
             // Configure and append CUDA provider to session options
             try {
@@ -410,19 +455,19 @@ int main(int argc, char** argv) {
                 // Release CUDA provider options
                 Ort::GetApi().ReleaseCUDAProviderOptions(cuda_options);
                 
-                cout << "✅ CUDA provider successfully configured with device_id=0" << endl;
+                std::cout << "✅ CUDA provider successfully configured with device_id=0" << std::endl;
             } catch (const Ort::Exception& e) {
-                cout << "⚠️  Could not configure CUDA provider: " << e.what() << endl;
+                std::cout << "⚠️  Could not configure CUDA provider: " << e.what() << std::endl;
                 cuda_available = false;
-            } catch (const exception& e) {
-                cout << "⚠️  Unexpected error configuring CUDA provider: " << e.what() << endl;
+            } catch (const std::exception& e) {
+                std::cout << "⚠️  Unexpected error configuring CUDA provider: " << e.what() << std::endl;
                 cuda_available = false;
             }
         } else {
-            cout << "⚠️  CUDA execution provider not available - using CPU only" << endl;
+            std::cout << "⚠️  CUDA execution provider not available - using CPU only" << std::endl;
         }
-    } catch (const exception& e) {
-        cout << "Error checking providers: " << e.what() << endl;
+    } catch (const std::exception& e) {
+        std::cout << "Error checking providers: " << e.what() << std::endl;
         cuda_available = false;
     }
     
@@ -438,73 +483,73 @@ int main(int argc, char** argv) {
     
     bool cuda_used = false;
     if (cuda_available) {
-        cout << "🚀 GPU acceleration enabled!" << endl;
-        cout << "📊 1080p processing requires ~" << estimated_1080p_mb << "MB for frame buffers" << endl;
+        std::cout << "🚀 GPU acceleration enabled!" << std::endl;
+        std::cout << "📊 Processing requires ~" << estimated_1080p_mb << "MB for frame buffers" << std::endl;
         gpu_manager.printMemoryStats("after model load");
         cuda_used = true;
     } else {
-        cout << "⚠️  Using CPU fallback (GPU not available or not configured)" << endl;
-        cout << "📊 1080p CPU processing may be slower - consider GPU version for optimal performance" << endl;
+        std::cout << "⚠️  Using CPU fallback (GPU not available or not configured)" << std::endl;
+        std::cout << "📊 CPU processing may be slower - consider GPU version for optimal performance" << std::endl;
     }
     
-    cout << "Model loaded successfully!\n";
+    std::cout << "Model loaded successfully!\n";
 
-    cout << "Press ESC to quit\n";
-    Mat frame;
-    auto start_time = chrono::high_resolution_clock::now();
+    std::cout << "Press ESC to quit\n";
+    cv::Mat frame;
+    auto start_time = std::chrono::high_resolution_clock::now();
     int frame_count = 0;
     
-    // Pre-allocate buffers for 1080p processing to avoid frequent allocations
-    Mat mask, output, blurred;
+    // Pre-allocate buffers for processing to avoid frequent allocations
+    cv::Mat mask, output, blurred;
     bool first_frame = true;
     
     // Get blur kernel size
-    Size blur_kernel;
+    cv::Size blur_kernel;
     if (!blur_enabled) {
-        blur_kernel = Size(0, 0);
+        blur_kernel = cv::Size(0, 0);
     } else if (blur_level == "low") {
-        blur_kernel = Size(7, 7);
+        blur_kernel = cv::Size(7, 7);
     } else if (blur_level == "high") {
-        blur_kernel = Size(25, 25);
+        blur_kernel = cv::Size(25, 25);
     } else {
-        blur_kernel = Size(15, 15);  // mid
+        blur_kernel = cv::Size(15, 15);  // mid
     }
     
     while (cap.read(frame)) {
-        // Ensure frame dimensions are suitable for 1080p processing
+        // Ensure frame dimensions are suitable for processing
         if (frame.cols != width || frame.rows != height) {
-            resize(frame, frame, Size(width, height));
+            cv::resize(frame, frame, cv::Size(width, height));
             if (first_frame) {
-                cout << "📐 Resized input to: " << width << "x" << height << " for 1080p processing" << endl;
+                std::cout << "📐 Resized input to: " << width << "x" << height << " for processing" << std::endl;
             }
         }
         
         // Auto-resize to 1080p for virtual camera output if enabled
         if (vcam_enabled) {
             if (frame.cols != 1920 || frame.rows != 1080) {
-                resize(frame, frame, Size(1920, 1080));
+                cv::resize(frame, frame, cv::Size(1920, 1080));
                 if (first_frame) {
-                    cout << "🖥️ Auto-resized to 1080p for virtual camera: 1920x1080" << endl;
+                    std::cout << "🖥️ Auto-resized to 1080p for virtual camera: 1920x1080" << std::endl;
                 }
             }
         }
         
         // Run inference on downsampled frame (U²-Net processes at 320x320)
-        Mat downsampled;
-        resize(frame, downsampled, Size(320, 320));
-        Mat mask_320 = run_inference(session, downsampled, cuda_available);
+        cv::Mat downsampled;
+        cv::resize(frame, downsampled, cv::Size(320, 320));
+        cv::Mat mask_320 = run_inference(session, downsampled, cuda_available);
         
         // Resize mask back to full resolution
-        resize(mask_320, mask, frame.size());
+        cv::resize(mask_320, mask, frame.size());
         
         // Apply blur only if enabled
         if (blur_enabled && blur_kernel.width > 0) {
-            // Pre-allocate blurred frame for 1080p efficiency
+            // Pre-allocate blurred frame for efficiency
             if (first_frame || blurred.empty() || blurred.size() != frame.size()) {
                 blurred.create(frame.size(), frame.type());
             }
             // Apply Gaussian blur with specified kernel
-            GaussianBlur(frame, blurred, blur_kernel, 0);
+            cv::GaussianBlur(frame, blurred, blur_kernel, 0);
         }
         
         // Ensure output frame is properly allocated
@@ -512,12 +557,12 @@ int main(int argc, char** argv) {
             output.create(frame.size(), frame.type());
         }
         
-        // Fast pixel-level blend optimized for 1080p
-        Mat mask_clean = (mask > 0.5);
+        // Fast pixel-level blend optimized
+        cv::Mat mask_clean = (mask > 0.5);
         if (blur_enabled) {
             frame.copyTo(output, mask_clean);
             // Create proper 3-channel mask for the blurred background
-            Mat mask_3channel;
+            cv::Mat mask_3channel;
             cv::cvtColor(~mask_clean, mask_3channel, cv::COLOR_GRAY2BGR);
             blurred.copyTo(output, mask_3channel);
         } else {
@@ -528,28 +573,28 @@ int main(int argc, char** argv) {
         // Write to virtual camera if enabled and open
         if (vcam_enabled && vcam_opened && vcam_output) {
             if (!vcam_output->writeFrame(output)) {
-                cerr << "⚠️ Virtual camera write failed\n";
+                std::cerr << "⚠️ Virtual camera write failed\n";
             }
         }
         
         // Create window title with blur settings
-        string blur_info = blur_enabled ? 
+        std::string blur_info = blur_enabled ? 
             (blur_level == "low" ? " (Low Blur)" : 
              blur_level == "high" ? " (High Blur)" : " (Mid Blur)") : 
             " (No Blur)";
-        string window_title = cuda_available ? 
-            (vcam_enabled ? "1080p Background Removed (GPU + Virtual Camera)" + blur_info : 
-                          "1080p Background Removed (GPU)" + blur_info) :
-            (vcam_enabled ? "1080p Background Removed (CPU + Virtual Camera)" + blur_info : 
-                          "1080p Background Removed (CPU)" + blur_info);
-        imshow(window_title, output);
-        if (waitKey(1) == 27) break;  // ESC
+        std::string window_title = cuda_available ? 
+            (vcam_enabled ? "Background Removed (GPU + Virtual Camera)" + blur_info : 
+                          "Background Removed (GPU)" + blur_info) :
+            (vcam_enabled ? "Background Removed (CPU + Virtual Camera)" + blur_info : 
+                          "Background Removed (CPU)" + blur_info);
+        cv::imshow(window_title, output);
+        if (cv::waitKey(1) == 27) break;  // ESC
         
-        // Enhanced performance monitoring with memory info for 1080p
+        // Enhanced performance monitoring with memory info
         frame_count++;
         if (frame_count % 10 == 0) {  // More frequent updates
-            auto current_time = chrono::high_resolution_clock::now();
-            auto duration = chrono::duration_cast<chrono::milliseconds>(current_time - start_time);
+            auto current_time = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - start_time);
             double fps_real = (frame_count * 1000.0) / duration.count();
             
             // Update and display GPU memory info if CUDA is available
@@ -557,19 +602,19 @@ int main(int argc, char** argv) {
                 gpu_manager.printMemoryStats();
             }
             
-            string perf_label = cuda_available ? 
-                (vcam_enabled ? "1080p GPU + VCam" : "1080p GPU") : 
-                (vcam_enabled ? "1080p CPU + VCam" : "1080p CPU");
+            std::string perf_label = cuda_available ? 
+                (vcam_enabled ? "GPU + VCam" : "GPU") : 
+                (vcam_enabled ? "CPU + VCam" : "CPU");
             
             // Add blur info to performance output
-            string blur_info = blur_enabled ? 
+            std::string blur_info = blur_enabled ? 
                 (blur_level == "low" ? " [Low Blur]" : 
                  blur_level == "high" ? " [High Blur]" : " [Mid Blur]") : 
                 " [No Blur]";
             
-            cout << "🚀 " << perf_label << " Performance: " 
+            std::cout << "🚀 " << perf_label << " Performance: " 
                  << fps_real << " FPS (" << frame_count << " frames in "
-                 << duration.count() << "ms)" << blur_info << endl;
+                 << duration.count() << "ms)" << blur_info << std::endl;
             
             // Reset for next measurement
             frame_count = 0;
@@ -579,9 +624,9 @@ int main(int argc, char** argv) {
         first_frame = false;
     }
 
-    // Proper cleanup for 1080p processing
+    // Proper cleanup
     cap.release();
-    destroyAllWindows();
+    cv::destroyAllWindows();
     
     // Final memory stats
     if (cuda_available && cuda_used) {
@@ -599,7 +644,7 @@ int main(int argc, char** argv) {
     output.release();
     blurred.release();
     
-    cout << "🧹 1080p processing cleanup completed" << endl;
+    std::cout << "🧹 Processing cleanup completed" << std::endl;
     
     return 0;
 }
