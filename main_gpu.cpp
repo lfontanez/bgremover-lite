@@ -155,19 +155,46 @@ int main(int argc, char** argv) {
         // If CUDA is available and provider library exists, explicitly enable it
         if (cuda_available && cuda_provider_available) {
             try {
-                // Add CUDA execution provider to session options
-                Ort::CUDAExecutionProviderOptions cuda_options;
-                cuda_options.device_id = 0;  // Use first GPU device
-                
-                // Enable CUDA provider
-                session_options.AppendExecutionProvider_CUDA(cuda_options);
-                cout << "✅ CUDA execution provider explicitly enabled" << endl;
-                
-                // Disable CPU fallback when CUDA is available
-                session_options.DisableCpuMemArena();
-                session_options.SetInterOpNumThreads(1);
-                session_options.SetIntraOpNumThreads(1);
-                session_options.SetGraphOptimizationLevel(ORT_ENABLE_ALL);
+                // Try to use CUDA provider with proper configuration
+                // First, try the V2 API if available
+                try {
+                    #ifdef ORT_API_VERSION
+                    #if ORT_API_VERSION >= 14
+                    // Use V2 API for newer ONNX Runtime versions
+                    Ort::CUDAProviderOptionsV2 cuda_options_v2;
+                    session_options.AppendExecutionProvider_CUDA_V2(cuda_options_v2);
+                    cout << "✅ CUDA execution provider V2 explicitly enabled" << endl;
+                    #else
+                    // Use legacy API for older versions
+                    Ort::CUDAProviderOptions cuda_options;
+                    session_options.AppendExecutionProvider_CUDA(cuda_options);
+                    cout << "✅ CUDA execution provider explicitly enabled" << endl;
+                    #endif
+                    #else
+                    // Default to legacy API
+                    Ort::CUDAProviderOptions cuda_options;
+                    session_options.AppendExecutionProvider_CUDA(cuda_options);
+                    cout << "✅ CUDA execution provider explicitly enabled" << endl;
+                    #endif
+                    
+                    // Configure session options for optimal performance
+                    session_options.SetIntraOpNumThreads(1);
+                    session_options.SetGraphOptimizationLevel(ORT_ENABLE_ALL);
+                    
+                } catch (const Ort::Exception& e) {
+                    // If V2 API fails, try the original API
+                    try {
+                        Ort::CUDAProviderOptions cuda_options;
+                        session_options.AppendExecutionProvider_CUDA(cuda_options);
+                        cout << "✅ CUDA execution provider enabled (fallback)" << endl;
+                    } catch (const Ort::Exception& e2) {
+                        cerr << "❌ Failed to enable CUDA execution provider: " << e2.what() << endl;
+                        cuda_available = false;
+                    } catch (const exception& e2) {
+                        cerr << "❌ Generic error enabling CUDA provider: " << e2.what() << endl;
+                        cuda_available = false;
+                    }
+                }
                 
             } catch (const Ort::Exception& e) {
                 cerr << "❌ Failed to enable CUDA execution provider: " << e.what() << endl;
