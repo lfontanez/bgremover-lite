@@ -10,6 +10,35 @@ find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui dnn)
 message(STATUS "Found OpenCV version: ${OpenCV_VERSION}")
 message(STATUS "OpenCV include dirs: ${OpenCV_INCLUDE_DIRS}")
 
+# ==== Find GTK3 Development Libraries ====
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
+if(GTK3_FOUND)
+    message(STATUS "✅ GTK3 found: ${GTK3_INCLUDE_DIRS}")
+    message(STATUS "GTK3 libraries: ${GTK3_LIBRARIES}")
+    message(STATUS "GTK3 linker flags: ${GTK3_LDFLAGS}")
+else()
+    message(WARNING "⚠️ GTK3 not found - OpenCV GUI features may not work properly")
+endif()
+
+# Find additional GTK3 dependencies that might be needed
+pkg_check_modules(GLIB2 REQUIRED glib-2.0)
+pkg_check_modules(GIO REQUIRED gio-2.0)
+pkg_check_modules(GOBJECT REQUIRED gobject-2.0)
+pkg_check_modules(CAIRO REQUIRED cairo)
+if(GLIB2_FOUND)
+    message(STATUS "✅ GLib2 found: ${GLIB2_INCLUDE_DIRS}")
+endif()
+if(GIO_FOUND)
+    message(STATUS "✅ GIO found: ${GIO_INCLUDE_DIRS}")
+endif()
+if(GOBJECT_FOUND)
+    message(STATUS "✅ GObject found: ${GOBJECT_INCLUDE_DIRS}")
+endif()
+if(CAIRO_FOUND)
+    message(STATUS "✅ Cairo found: ${CAIRO_INCLUDE_DIRS}")
+endif()
+
 # ==== Detect CUDA Automatically ====
 find_package(CUDAToolkit QUIET)
 
@@ -89,10 +118,42 @@ function(add_bgremover_target TARGET SRC_FILES)
         ${OpenCV_INCLUDE_DIRS}
         ${ONNXRUNTIME_INCLUDE_DIR}
     )
+    
+    # Link OpenCV and ONNX Runtime libraries
     target_link_libraries(${TARGET} PRIVATE
         ${OpenCV_LIBS}
         onnxruntime
     )
+    
+    # Link GTK3 and related dependencies if found
+    if(GTK3_FOUND)
+        target_include_directories(${TARGET} PRIVATE ${GTK3_INCLUDE_DIRS})
+        target_link_libraries(${TARGET} PRIVATE ${GTK3_LIBRARIES})
+        target_compile_options(${TARGET} PRIVATE ${GTK3_CFLAGS_OTHER})
+    endif()
+    
+    # Link additional GTK3 dependencies
+    if(GLIB2_FOUND)
+        target_include_directories(${TARGET} PRIVATE ${GLIB2_INCLUDE_DIRS})
+        target_link_libraries(${TARGET} PRIVATE ${GLIB2_LIBRARIES})
+    endif()
+    
+    if(GIO_FOUND)
+        target_include_directories(${TARGET} PRIVATE ${GIO_INCLUDE_DIRS})
+        target_link_libraries(${TARGET} PRIVATE ${GIO_LIBRARIES})
+    endif()
+    
+    if(GOBJECT_FOUND)
+        target_include_directories(${TARGET} PRIVATE ${GOBJECT_INCLUDE_DIRS})
+        target_link_libraries(${TARGET} PRIVATE ${GOBJECT_LIBRARIES})
+    endif()
+    
+    if(CAIRO_FOUND)
+        target_include_directories(${TARGET} PRIVATE ${CAIRO_INCLUDE_DIRS})
+        target_link_libraries(${TARGET} PRIVATE ${CAIRO_LIBRARIES})
+    endif()
+    
+    # Performance optimization flags
     target_compile_options(${TARGET} PRIVATE -O3 -ffast-math -march=native)
 endfunction()
 
