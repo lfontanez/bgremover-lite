@@ -207,6 +207,22 @@ After building, you'll have:
 - **CPU Version**: 1-2 FPS (usable for testing), 3-5 FPS (720p)
 - **GPU Version**: 25-30 FPS (1080p), 8-12 FPS (4K experimental)
 
+## 🚀 Quick Start
+
+```bash
+# Simple build (no LD_LIBRARY_PATH needed!)
+git clone https://github.com/lfontanez/bgremover-lite.git
+cd bgremover-lite
+rm -rf build
+./build.sh
+
+# Both executables work without LD_LIBRARY_PATH:
+./build/bgremover --help
+./build/bgremover_gpu --help
+```
+
+> **📖 Detailed Build Guide**: See [BUILD_GUIDE.md](BUILD_GUIDE.md) for complete documentation, troubleshooting, and advanced usage.
+
 ## 🚀 Usage
 
 ### Background Blur Control Options
@@ -277,6 +293,22 @@ BGRemover Lite now includes advanced background blur control with multiple inten
 - **1080p Performance**: Real-time FPS and performance stats displayed in console
 - **GPU Memory**: Monitor 1.67GB VRAM usage for 1080p processing
 - **Frame Rate**: Expect 30 FPS at 1080p with GPU acceleration
+
+### ✅ No More LD_LIBRARY_PATH Issues!
+
+**Problem Solved**: Previous versions required `LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH ./bgremover` to run.
+
+**Solution**: Enhanced RPATH configuration now finds libraries automatically:
+- ✅ **No LD_LIBRARY_PATH needed** - Works out of the box
+- ✅ **Portable** - Same executables work in any environment
+- ✅ **Automatic library discovery** - System, conda, and custom libraries found
+- ✅ **Environment agnostic** - Build once, run anywhere
+
+Simply run:
+```bash
+./build/bgremover --help    # Works immediately!
+./build/bgremover_gpu --help # Works immediately!
+```
 
 ### Background Blur Feature Benefits
 
@@ -746,6 +778,9 @@ The enhanced build script (`build.sh`) automatically:
 
 ## 🐛 Troubleshooting
 
+### Quick Reference
+**📖 Complete troubleshooting guide**: See [BUILD_GUIDE.md](BUILD_GUIDE.md#troubleshooting)
+
 ### GPU Not Detected
 
 ```bash
@@ -922,16 +957,18 @@ Ort::GetApi().SessionOptionsAppendExecutionProvider_CUDA_V2(
 bgremover-lite/
 ├── main.cpp                 # CPU version
 ├── main_gpu.cpp            # GPU-accelerated version
-├── CMakeLists.txt          # Build configuration
+├── CMakeLists.txt          # Build configuration (with RPATH)
 ├── build.sh                # Enhanced build script
 ├── setup_cuda_env.sh       # CUDA environment setup
 ├── verify_opencv_cuda.py   # GPU verification script
+├── BUILD_GUIDE.md          # 📖 Complete build & usage documentation
+├── README.md               # Main documentation
 ├── models/
 │   ├── u2net.onnx         # U²-Net model
 │   └── u2netp.onnx        # U²-Net (lightweight)
 ├── build/                  # Build artifacts
-│   ├── bgremover          # CPU executable
-│   └── bgremover_gpu      # GPU executable
+│   ├── bgremover          # CPU executable (RPATH-enabled)
+│   └── bgremover_gpu      # GPU executable (RPATH-enabled)
 └── onnxruntime/           # ONNX Runtime libraries
     └── lib/
         ├── libonnxruntime.so
@@ -1065,3 +1102,21 @@ A: Yes, if the VM has:
 - Access to /dev/video* devices
 - 6GB+ VRAM allocation for 1080p processing
 - USB 3.0 controller passthrough for high-res webcams
+
+**Q: Why doesn't it need LD_LIBRARY_PATH anymore?**
+A: Enhanced RPATH configuration automatically finds all required libraries:
+- Libraries are found relative to the executable location (`$ORIGIN`)
+- System libraries in standard paths are searched
+- ONNX Runtime libraries are found via RPATH
+- No manual environment variable configuration needed
+- Same executables work in any environment (system, conda, containers)
+
+**Q: What are the library search paths?**
+A: The executable searches in this order:
+1. Same directory as executable (`$ORIGIN`)
+2. `../lib` relative to executable
+3. ONNX Runtime installation directory
+4. System directories (`/usr/lib/x86_64-linux-gnu`)
+5. Standard library search paths
+
+This ensures maximum compatibility while maintaining simplicity.
