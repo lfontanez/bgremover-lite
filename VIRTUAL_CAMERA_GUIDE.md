@@ -529,6 +529,25 @@ sudo modprobe v4l2loopback exclusive_caps=1 video_nr=2 max_buffers=6
 | Medium Blur (15x15) | 30-32 FPS | 2-3 FPS | 1.7GB | **Default, most use cases** |
 | High Blur (25x25) | 25-30 FPS | 1-2 FPS | 1.9GB | Privacy-focused, GPU users |
 
+6. **Optimize blur settings for 1080p performance**:
+```bash
+# For better 1080p performance, use lower blur settings
+./build/bgremover_gpu --vcam --blur-low         # Better performance
+./build/bgremover_gpu --vcam --no-blur          # Best performance
+
+# For CPU-only virtual camera, always use low blur
+./build/bgremover --vcam --blur-low             # CPU virtual camera with low blur
+```
+
+**1080p Virtual Camera Performance Guide:**
+
+| Blur Level | GPU FPS (1080p) | CPU FPS (1080p) | VRAM Usage | Recommended For |
+|------------|-----------------|-----------------|------------|-----------------|
+| No Blur | 35-40 FPS | 3-5 FPS | 1.2GB | Fast meetings, demos |
+| Low Blur (7x7) | 30-35 FPS | 2-4 FPS | 1.5GB | CPU/GPU balance |
+| Medium Blur (15x15) | 30-32 FPS | 2-3 FPS | 1.7GB | **Default, most use cases** |
+| High Blur (25x25) | 25-30 FPS | 1-2 FPS | 1.9GB | Privacy-focused, GPU users |
+
 ### Black Screen in Applications
 
 **Problem**: Virtual camera shows black screen in apps
