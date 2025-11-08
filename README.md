@@ -108,6 +108,202 @@ make -j$(nproc)
 - **ESC**: Quit application
 - Real-time FPS and performance stats displayed in console
 
+## 📹 Virtual Camera
+
+### Virtual Camera Feature 🌐
+The Virtual Camera feature makes your processed video available to any application that accepts camera input, including Zoom, Microsoft Teams, Google Meet, OBS Studio, Discord, and more. Instead of opening a window, the processed video is sent to a virtual camera device (typically `/dev/video2`) that appears as a regular webcam to other applications.
+
+### Setup
+
+#### Quick Setup
+Run the automated setup script to install and configure v4l2loopback:
+
+```bash
+./setup_virtual_camera.sh
+```
+
+This script will:
+- Install the v4l2loopback kernel module
+- Create a virtual camera device at `/dev/video2`
+- Set appropriate permissions
+- Configure the module to load automatically on system boot
+
+#### Manual Setup
+If the automated script doesn't work for your system, you can set up the virtual camera manually:
+
+```bash
+# Install v4l2loopback
+sudo apt update
+sudo apt install v4l2loopback-dkms
+
+# Load the kernel module with desired parameters
+sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="BGRemover Virtual Camera"
+
+# Make the module load automatically on boot
+echo "v4l2loopback" | sudo tee -a /etc/modules
+echo "options v4l2loopback video_nr=2 card_label=\"BGRemover Virtual Camera\"" | sudo tee -a /etc/modprobe.d/v4l2loopback.conf
+```
+
+### Usage
+
+#### Basic Virtual Camera
+Process webcam input and send to virtual camera:
+
+```bash
+./build/bgremover_gpu --vcam
+```
+
+#### Custom Virtual Camera Device
+Use a specific virtual camera device (e.g., `/dev/video3`):
+
+```bash
+./build/bgremover_gpu --vcam-device /dev/video3
+```
+
+#### Process Video File to Virtual Camera
+Process a video file and send output to virtual camera:
+
+```bash
+./build/bgremover_gpu --vcam path/to/video.mp4
+```
+
+#### Virtual Camera with Custom Device
+```bash
+./build/bgremover_gpu --vcam-device /dev/video3 path/to/video.mp4
+```
+
+### Supported Applications
+
+The virtual camera works with any application that accepts webcam input:
+
+- **Zoom**: Settings → Video → Select "UVC Camera" or "BGRemover Virtual Camera"
+- **Microsoft Teams**: Settings → Devices → Camera → Select virtual camera
+- **Google Meet**: Automatically detects virtual camera (grant permission when prompted)
+- **OBS Studio**: Sources → Add → Video Capture Device → Select virtual camera
+- **Discord**: Settings → Voice and Video → Input Device → Select virtual camera
+- **Skype**: Settings → Audio & Video → Camera → Select virtual camera
+- **Any WebRTC-compatible app**: Will automatically detect and use the virtual camera
+
+### Testing
+
+#### Verify Virtual Camera Device
+Check if the virtual camera device is created and working:
+
+```bash
+# List video devices
+v4l2-ctl --list-devices
+
+# Check specific device information
+v4l2-ctl --device=/dev/video2 --all
+
+# List supported formats
+v4l2-ctl --device=/dev/video2 --list-formats-ext
+```
+
+#### Test with Media Players
+Watch the virtual camera output directly:
+
+```bash
+# Using ffplay (if ffmpeg is installed)
+ffplay /dev/video2
+
+# Using mpv
+mpv av://v4l2:/dev/video2
+
+# Using cvlc (VLC command line)
+cvlc v4l2:///dev/video2
+```
+
+#### Test Loopback
+Create a test pattern on the virtual camera to verify end-to-end functionality:
+
+```bash
+# Generate test pattern
+ffmpeg -f lavfi -i testsrc=duration=10:size=1280x720:rate=30 -f v4l2 /dev/video2
+```
+
+### Troubleshooting
+
+#### Device Not Found
+If `/dev/video2` doesn't exist:
+
+```bash
+# Check if v4l2loopback module is loaded
+lsmod | grep v4l2loopback
+
+# If not loaded, manually load it
+sudo modprobe v4l2loopback
+
+# Check kernel messages for errors
+dmesg | grep v4l2loopback
+```
+
+#### Permission Denied
+If you get "Permission denied" errors:
+
+```bash
+# Add your user to the video group
+sudo usermod -a -G video $USER
+
+# Log out and back in, or restart your session
+# Or temporarily use:
+sudo chown $USER:$USER /dev/video2
+```
+
+#### Not Showing in Applications
+If applications don't detect the virtual camera:
+
+```bash
+# Verify the device is properly created
+v4l2-ctl --list-devices
+
+# Try recreating the device with specific parameters
+sudo rmmod v4l2loopback
+sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="BackgroundRemover"
+
+# Some applications require a different pixel format - try:
+sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="BackgroundRemover" pixel_format=YUYV
+```
+
+#### Module Not Loading on Boot
+Ensure the module loads automatically:
+
+```bash
+# Check if module is in the boot configuration
+ls -la /etc/modules-load.d/
+ls -la /etc/modprobe.d/
+
+# Re-add the module to load automatically
+echo "v4l2loopback" | sudo tee -a /etc/modules
+echo "options v4l2loopback video_nr=2 card_label=\"BGRemover Virtual Camera\"" | sudo tee -a /etc/modprobe.d/v4l2loopback.conf
+
+# Update initramfs (if using Ubuntu/Debian)
+sudo update-initramfs -u
+```
+
+#### Multiple Virtual Cameras
+If you need multiple virtual cameras:
+
+```bash
+# Create multiple devices (video2, video3, video4)
+sudo modprobe v4l2loopback devices=3 video_nr=2,3,4
+
+# Use specific devices
+./build/bgremover_gpu --vcam-device /dev/video3
+```
+
+#### Application-Specific Issues
+- **Zoom**: Restart Zoom after setting up the virtual camera
+- **OBS Studio**: Add the virtual camera as a "Video Capture Device" source
+- **Web browsers**: Grant camera permissions when first accessing the virtual camera
+- **Chrome/Edge**: Some versions have issues with v4l2loopback - try Firefox
+
+#### Performance Issues
+- Virtual camera adds minimal overhead (~1-2ms per frame)
+- If experiencing performance drops, ensure you have sufficient GPU memory
+- Consider reducing blur strength or frame resolution for better performance
+- Monitor GPU usage with `nvidia-smi` to ensure the GPU isn't saturated
+
 ## 🏗️ Architecture
 
 ### GPU Pipeline
