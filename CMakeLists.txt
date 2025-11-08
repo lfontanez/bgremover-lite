@@ -1,4 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
+
+# Suppress FindCUDA deprecation warnings
+if(POLICY CMP0146)
+    cmake_policy(SET CMP0146 NEW)  # Use NEW to suppress warnings, or OLD for old behavior
+endif()
+
 project(bgremover-lite LANGUAGES CXX)
 
 # ==================================================================================
@@ -102,14 +108,36 @@ else()
     message(STATUS "   - models/u2net.onnx")
     message(STATUS "   - models/u2netp.onnx")
     
-    # Check for existing manual model placement
+    # Check for existing manual model placement with improved symlink handling
     set(MANUAL_MODELS_FOUND TRUE)
-    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/models/u2net.onnx")
+    
+    # Helper function to check file existence with symlink support
+    macro(CHECK_MODEL_EXISTS model_path result_var)
+        if(EXISTS "${model_path}")
+            set(${result_var} TRUE)
+            # Check if it's a symlink and get the real path
+            if(IS_SYMLINK "${model_path}")
+                file(REAL_PATH "${model_path}" real_path)
+                get_filename_component(model_name "${model_path}" NAME)
+                message(STATUS "✅ ${model_name}: Found (symlink to: ${real_path})")
+            else()
+                get_filename_component(model_name "${model_path}" NAME)
+                message(STATUS "✅ ${model_name}: Found (direct file)")
+            endif()
+        else()
+            set(${result_var} FALSE)
+            get_filename_component(model_name "${model_path}" NAME)
+            message(WARNING "⚠️  Manual model placement: ${model_name} not found")
+        endif()
+    endmacro()
+    
+    CHECK_MODEL_EXISTS("${CMAKE_SOURCE_DIR}/models/u2net.onnx" U2NET_EXISTS)
+    if(NOT U2NET_EXISTS)
         set(MANUAL_MODELS_FOUND FALSE)
-        message(WARNING "⚠️  Manual model placement: u2net.onnx not found")
     endif()
     
-    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/models/u2netp.onnx")
+    CHECK_MODEL_EXISTS("${CMAKE_SOURCE_DIR}/models/u2netp.onnx" U2NETP_EXISTS)
+    if(NOT U2NETP_EXISTS)
         message(WARNING "⚠️  Manual model placement: u2netp.onnx not found (optional)")
     endif()
     
@@ -117,22 +145,51 @@ else()
         message(STATUS "✅ Manual model placement detected")
     endif()
     
-    # Set paths for manual placement with backward compatibility
-    if(EXISTS "${CMAKE_SOURCE_DIR}/models/u2net.onnx")
-        add_definitions(-DU2NET_MODEL_PATH="${CMAKE_SOURCE_DIR}/models/u2net.onnx")
-        message(STATUS "✅ Using manually placed U²-Net model: ${CMAKE_SOURCE_DIR}/models/u2net.onnx")
-    endif()
+    # Set paths for manual placement with enhanced validation
+    macro(SET_MODEL_PATH model_path definition_name)
+        if(EXISTS "${model_path}")
+            # Validate that the file is readable and not empty
+            file(READ "${model_path}" file_content LENGTH_MAX 1)
+            if(file_content)
+                add_definitions(-D${definition_name}="${model_path}")
+                if(IS_SYMLINK "${model_path}")
+                    file(REAL_PATH "${model_path}" real_path)
+                    message(STATUS "✅ Using manually placed ${definition_name} (symlink): ${model_path} -> ${real_path}")
+                else()
+                    message(STATUS "✅ Using manually placed ${definition_name}: ${model_path}")
+                endif()
+            else()
+                message(WARNING "⚠️  ${model_path} exists but appears to be empty - skipping")
+            endif()
+        else()
+            message(WARNING "⚠️  Manual model placement: ${model_path} not found - build may fail")
+        endif()
+        # Clean up the file_content variable
+        unset(file_content)
+    endmacro()
     
-    if(EXISTS "${CMAKE_SOURCE_DIR}/models/u2netp.onnx")
-        add_definitions(-DU2NETP_MODEL_PATH="${CMAKE_SOURCE_DIR}/models/u2netp.onnx")
-        message(STATUS "✅ Using manually placed U²-Net Portrait model: ${CMAKE_SOURCE_DIR}/models/u2netp.onnx")
-    endif()
+    SET_MODEL_PATH("${CMAKE_SOURCE_DIR}/models/u2net.onnx" "U2NET_MODEL_PATH")
+    SET_MODEL_PATH("${CMAKE_SOURCE_DIR}/models/u2netp.onnx" "U2NETP_MODEL_PATH")
 endif()
 
-# Create models directory if it doesn't exist
+# Create models directory if it doesn't exist with enhanced error handling
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/models")
     file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/models")
-    message(STATUS "📁 Created models directory: ${CMAKE_SOURCE_DIR}/models")
+    if(EXISTS "${CMAKE_SOURCE_DIR}/models")
+        message(STATUS "📁 Created models directory: ${CMAKE_SOURCE_DIR}/models")
+    else()
+        message(FATAL_ERROR "❌ Failed to create models directory: ${CMAKE_SOURCE_DIR}/models")
+        message(STATUS "   Please ensure you have write permissions in the project directory")
+    endif()
+else()
+    # Directory exists, check if it's writable
+    file(WRITE "${CMAKE_SOURCE_DIR}/models/.cmake_test_write" "test")
+    if(EXISTS "${CMAKE_SOURCE_DIR}/models/.cmake_test_write")
+        file(REMOVE "${CMAKE_SOURCE_DIR}/models/.cmake_test_write")
+        message(STATUS "📁 Models directory exists and is writable: ${CMAKE_SOURCE_DIR}/models")
+    else()
+        message(WARNING "⚠️  Models directory exists but may not be writable: ${CMAKE_SOURCE_DIR}/models")
+    endif()
 endif()
 
 # Enhanced model information display
@@ -169,17 +226,28 @@ else()
     
     # Check manual placement with detailed status
     set(MANUAL_CHECK_RESULTS "")
-    if(EXISTS "${CMAKE_SOURCE_DIR}/models/u2net.onnx")
-        set(MANUAL_CHECK_RESULTS "${MANUAL_CHECK_RESULTS}✅ u2net.onnx: Found\n")
-    else()
-        set(MANUAL_CHECK_RESULTS "${MANUAL_CHECK_RESULTS}❌ u2net.onnx: Missing (required)\n")
-    endif()
+    # Enhanced model status checking with symlink detection
+    set(MANUAL_CHECK_RESULTS "")
     
-    if(EXISTS "${CMAKE_SOURCE_DIR}/models/u2netp.onnx")
-        set(MANUAL_CHECK_RESULTS "${MANUAL_CHECK_RESULTS}✅ u2netp.onnx: Found\n")
-    else()
-        set(MANUAL_CHECK_RESULTS "${MANUAL_CHECK_RESULTS}⚠️  u2netp.onnx: Missing (optional)\n")
-    endif()
+    macro(ADD_MODEL_STATUS model_path model_name is_required)
+        if(EXISTS "${model_path}")
+            if(IS_SYMLINK "${model_path}")
+                file(REAL_PATH "${model_path}" real_path)
+                set(MANUAL_CHECK_RESULTS "${MANUAL_CHECK_RESULTS}✅ ${model_name}: Found (symlink to: ${real_path})\n")
+            else()
+                set(MANUAL_CHECK_RESULTS "${MANUAL_CHECK_RESULTS}✅ ${model_name}: Found (direct file)\n")
+            endif()
+        else()
+            if(is_required)
+                set(MANUAL_CHECK_RESULTS "${MANUAL_CHECK_RESULTS}❌ ${model_name}: Missing (required)\n")
+            else()
+                set(MANUAL_CHECK_RESULTS "${MANUAL_CHECK_RESULTS}⚠️  ${model_name}: Missing (optional)\n")
+            endif()
+        endif()
+    endmacro()
+    
+    ADD_MODEL_STATUS("${CMAKE_SOURCE_DIR}/models/u2net.onnx" "u2net.onnx" TRUE)
+    ADD_MODEL_STATUS("${CMAKE_SOURCE_DIR}/models/u2netp.onnx" "u2netp.onnx" FALSE)
     
     message(STATUS "Manual Model Status:\n${MANUAL_CHECK_RESULTS}")
 endif()
@@ -325,8 +393,18 @@ if(NOT EXISTS "${ONNXRUNTIME_INCLUDE_DIR}/onnxruntime_cxx_api.h")
   set(ONNXRUNTIME_ARCHIVE "${CMAKE_BINARY_DIR}/onnxruntime.tgz")
   file(DOWNLOAD ${ONNXRUNTIME_URL} ${ONNXRUNTIME_ARCHIVE} SHOW_PROGRESS TIMEOUT 300 STATUS DOWNLOAD_STATUS)
 
-  if(NOT DOWNLOAD_STATUS EQUAL 0)
+  # Parse download status
+  list(GET DOWNLOAD_STATUS 0 DOWNLOAD_STATUS_CODE)
+  list(GET DOWNLOAD_STATUS 1 DOWNLOAD_STATUS_STRING)
+  
+  if(NOT DOWNLOAD_STATUS_CODE EQUAL 0)
     message(FATAL_ERROR "❌ Failed to download ONNX Runtime from ${ONNXRUNTIME_URL}")
+    message(STATUS "   Download status: ${DOWNLOAD_STATUS_STRING}")
+    message(STATUS "   Please check your internet connection and try again")
+    # Clean up failed download
+    if(EXISTS "${ONNXRUNTIME_ARCHIVE}")
+      file(REMOVE "${ONNXRUNTIME_ARCHIVE}")
+    endif()
   endif()
 
   file(ARCHIVE_EXTRACT INPUT ${ONNXRUNTIME_ARCHIVE} DESTINATION ${CMAKE_BINARY_DIR})
