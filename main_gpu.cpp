@@ -157,7 +157,7 @@ Mat run_inference(Ort::Session& session, const Mat& img, bool cuda_available) {
     
     // Initialize memory manager with CUDA availability
     buffer_manager.initialize(cuda_available);
-    Ort::MemoryInfo& mem_info = buffer_manager.getMemoryInfo();
+    Ort::MemoryInfo mem_info = buffer_manager.getMemoryInfo();
     
     // Preprocess on CPU (always, for compatibility)
     Mat resized;
