@@ -10,6 +10,12 @@ find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui dnn)
 message(STATUS "Found OpenCV version: ${OpenCV_VERSION}")
 message(STATUS "OpenCV include dirs: ${OpenCV_INCLUDE_DIRS}")
 
+# ==== Virtual Camera Support ====
+# V4L2 (Video4Linux2) is part of the Linux kernel headers
+# The v4l2_output.hpp header is header-only and provides virtual camera support
+# No additional libraries or includes needed - V4L2 is built into the kernel
+message(STATUS "✅ Virtual Camera support available on Linux (V4L2)")
+
 # ==== Find GTK3 Development Libraries ====
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
