@@ -472,7 +472,10 @@ int main(int argc, char** argv) {
         
         // Fast pixel-level blend optimized for 1080p
         frame.copyTo(output, mask_clean);
-        output.setTo(blurred, ~mask_clean);
+        // Create proper 3-channel mask for the blurred background
+        Mat mask_3channel;
+        cv::cvtColor(~mask_clean, mask_3channel, cv::COLOR_GRAY2BGR);
+        blurred.copyTo(output, mask_3channel);
         
         // Write to virtual camera if enabled and open
         if (vcam_enabled && vcam_opened && vcam_output) {
