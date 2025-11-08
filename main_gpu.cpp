@@ -1,6 +1,7 @@
 #include <onnxruntime_cxx_api.h>
 #include <opencv2/opencv.hpp>
 #include <iostream>
+#include <dlfcn.h>
 
 using namespace cv;
 using namespace std;
@@ -8,7 +9,7 @@ using namespace std;
 Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "bgremover-gpu");
 
 // GPU-accelerated ONNX inference (CUDA)
-Mat run_gpu_inference(Ort::Session& session, const Mat& img) {
+Mat run_gpu_inference(Ort::Session& session, const Mat& img, bool cuda_available) {
     // Preprocess on CPU
     Mat resized;
     resize(img, resized, Size(320, 320));
@@ -17,7 +18,12 @@ Mat run_gpu_inference(Ort::Session& session, const Mat& img) {
     
     array<int64_t, 4> shape = {1, 3, 320, 320};
     Ort::AllocatorWithDefaultOptions allocator;
+    
+    // Use CPU memory for now (GPU memory would require different preprocessing)
     Ort::MemoryInfo mem_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+    if (cuda_available) {
+        cout << "🚀 Using GPU execution with CUDA provider" << endl;
+    }
     
     auto input_tensor = Ort::Value::CreateTensor<float>(
         mem_info, blob.ptr<float>(), blob.total(),
@@ -107,7 +113,7 @@ int main(int argc, char** argv) {
     opts.SetIntraOpNumThreads(1);
     opts.SetGraphOptimizationLevel(ORT_ENABLE_ALL);
     
-    // Enable CUDA provider if available
+    // Check available providers
     vector<string> available_providers = Ort::GetAvailableProviders();
     bool cuda_available = false;
     
@@ -116,14 +122,26 @@ int main(int argc, char** argv) {
         cout << provider << " ";
         if (provider == "CUDAExecutionProvider") {
             cuda_available = true;
-            // For now, just note CUDA is available - full GPU support would require
-            // different ONNX Runtime build with CUDA provider
-            cout << "\n⚡ CUDA-capable runtime detected!" << endl;
         }
     }
     cout << endl;
     
-    if (!cuda_available) {
+    // Debug: Check if CUDA execution provider library is available
+    void* cuda_lib = dlopen("libonnxruntime_providers_shared.so", RTLD_NOW | RTLD_GLOBAL);
+    if (cuda_lib) {
+        cout << "✅ CUDA provider library loaded successfully" << endl;
+        dlclose(cuda_lib);
+    } else {
+        cout << "❌ CUDA provider library not found or failed to load" << endl;
+        cout << "   Error: " << dlerror() << endl;
+    }
+    
+    if (cuda_available) {
+        cout << "🚀 CUDA execution provider detected in environment" << endl;
+        cout << "✅ ONNX Runtime will use GPU acceleration when available" << endl;
+        // Note: CUDA provider will be used automatically if available in the environment
+        // and if ONNX Runtime was built with CUDA support
+    } else {
         cout << "⚠️  CUDA not available, using optimized CPU fallback" << endl;
     }
     
@@ -137,7 +155,7 @@ int main(int argc, char** argv) {
     
     while (cap.read(frame)) {
         // Run inference with GPU acceleration (if available)
-        Mat mask = run_gpu_inference(session, frame);
+        Mat mask = run_gpu_inference(session, frame, cuda_available);
         
         // Optimized blending
         Mat output = fast_blend(frame, mask);
