@@ -5,7 +5,7 @@ project(bgremover-lite LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# ==== Find OpenCV ====
+# ==== Find OpenCV with CUDA support ====
 find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui dnn)
 message(STATUS "Found OpenCV version: ${OpenCV_VERSION}")
 message(STATUS "OpenCV include dirs: ${OpenCV_INCLUDE_DIRS}")
@@ -16,6 +16,18 @@ find_package(CUDAToolkit QUIET)
 if(CUDAToolkit_FOUND)
     set(CUDA_AVAILABLE TRUE)
     message(STATUS "✅ CUDA detected: ${CUDAToolkit_VERSION}")
+    
+    # Check for CUDA runtime library
+    find_library(CUDA_RUNTIME_LIBRARY
+        NAMES cudart
+        HINTS ${CUDAToolkit_LIBRARY_DIRS} ${CUDA_TOOLKIT_ROOT_DIR}/lib64
+    )
+    if(CUDA_RUNTIME_LIBRARY)
+        message(STATUS "✅ CUDA runtime library found: ${CUDA_RUNTIME_LIBRARY}")
+    else()
+        message(WARNING "⚠️ CUDA runtime library not found")
+        set(CUDA_AVAILABLE FALSE)
+    endif()
 else()
     set(CUDA_AVAILABLE FALSE)
     message(WARNING "⚠️ CUDA not detected — building CPU-only version")
@@ -91,6 +103,18 @@ add_bgremover_target(bgremover ${CMAKE_SOURCE_DIR}/main.cpp)
 if(CUDA_AVAILABLE)
     add_bgremover_target(bgremover_gpu ${CMAKE_SOURCE_DIR}/main_gpu.cpp)
     target_compile_definitions(bgremover_gpu PRIVATE USE_CUDA=1)
+    target_link_libraries(bgremover_gpu PRIVATE 
+        ${CUDA_RUNTIME_LIBRARY}
+        cudadevrt  # CUDA device runtime
+    )
+    # Enable CUDA compilation for this target
+    enable_language(CUDA)
+    set_target_properties(bgremover_gpu PROPERTIES
+        CUDA_STANDARD 17
+        CUDA_STANDARD_REQUIRED ON
+    )
+    # Add CUDA include directories
+    target_include_directories(bgremover_gpu PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
     message(STATUS "🚀 Building GPU-accelerated version with CUDA and ONNX Runtime GPU backend")
 else()
     message(STATUS "🧩 Building CPU-only executables")
@@ -100,6 +124,21 @@ endif()
 add_bgremover_target(test_model ${CMAKE_SOURCE_DIR}/test_model.cpp)
 add_bgremover_target(debug_colors ${CMAKE_SOURCE_DIR}/debug_colors.cpp)
 add_bgremover_target(test_performance ${CMAKE_SOURCE_DIR}/test_performance.cpp)
+
+# GPU test utilities
+if(CUDA_AVAILABLE)
+    add_bgremover_target(test_gpu ${CMAKE_SOURCE_DIR}/test_gpu.cpp)
+    target_link_libraries(test_gpu PRIVATE 
+        ${CUDA_RUNTIME_LIBRARY}
+        cudadevrt
+    )
+    target_include_directories(test_gpu PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+    enable_language(CUDA)
+    set_target_properties(test_gpu PROPERTIES
+        CUDA_STANDARD 17
+        CUDA_STANDARD_REQUIRED ON
+    )
+endif()
 
 # ==== Optional RPATH setup (so ONNX Runtime lib is found at runtime) ====
 set_target_properties(bgremover bgremover_gpu test_model debug_colors test_performance
