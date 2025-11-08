@@ -726,6 +726,14 @@ main() {
         log_info "CUDA compilation enabled"
     fi
     
+    # U²-Net model download options
+    log_info "U²-Net model download configuration:"
+    log_info "  Download models: ON (recommended)"
+    log_info "  Cache directory: ~/.cache/u2net"
+    log_info "  Offline mode: OFF (requires models to be pre-cached)"
+    
+    CMAKE_FLAGS="$CMAKE_FLAGS -DU2NET_DOWNLOAD_MODELS=ON"
+    
     # Display final CMake configuration
     log_info "CMake configuration command: cmake $CMAKE_FLAGS .."
     
