@@ -41,7 +41,7 @@ if(U2NET_DOWNLOAD_MODELS)
     
     # Download required models
     message(STATUS "📥 Downloading U²-Net models...")
-    u2net_download_models()
+    u2net_download_all_models()
     
     # Verify model integrity with enhanced reporting
     message(STATUS "=== Model Integrity Verification ===")

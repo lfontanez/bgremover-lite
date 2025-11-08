@@ -34,11 +34,11 @@ Thumbs.db
 onnxruntime/
 external/
 
-# Model files - these are typically essential for the project to work
-# If models are small enough, you might want to track them:
-# models/*.onnx
-# If they're large, consider using Git LFS or download during build:
-# models/
+# Model files - automatically downloaded during build, excluded from repository
+models/*.onnx
+models/u2net.onnx
+models/u2netp.onnx
+models/modnet.onnx
 
 # System and temporary files
 *.tmp
