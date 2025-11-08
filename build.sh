@@ -1,46 +1,11 @@
-#!/bin/bash
+cmake_minimum_required(VERSION 3.16)
 
-# Background Remover Lite - Enhanced Build Script
-# This script builds the background remover project with comprehensive CUDA detection and configuration
+# Suppress FindCUDA deprecation warnings
+if(POLICY CMP0146)
+    cmake_policy(SET CMP0146 NEW)  # Use NEW to suppress warnings, or OLD for old behavior
+endif()
 
-set -e  # Exit on any error
-
-# Enhanced color codes for better visual feedback
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-MAGENTA='\033[0;35m'
-CYAN='\033[0;36m'
-WHITE='\033[1;37m'
-BOLD='\033[1m'
-NC='\033[0m' # No Color
-
-# Enhanced logging functions
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_header() {
-    echo ""
-    echo -e "${BOLD}${CYAN}=== $1 ===${NC}"
-}
-
-log_enhancement() {
-    echo -e "${MAGENTA}[ENHANCED]${NC} $1"
-}
+project(bgremover-lite LANGUAGES CXX)
 
 # Logging functions
 log_info() {
