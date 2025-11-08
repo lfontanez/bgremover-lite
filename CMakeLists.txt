@@ -15,6 +15,17 @@ option(U2NET_OFFLINE_MODE "Use only cached models (no downloads)" OFF)
 option(U2NET_CLEAN_CACHE "Clean model cache before downloading" OFF)
 set(U2NET_MODEL_CACHE_DIR "" CACHE PATH "Directory to cache downloaded models")
 
+# Set default cache directory if not specified
+if(NOT U2NET_MODEL_CACHE_DIR)
+    if(DEFINED ENV{XDG_CACHE_HOME})
+        set(U2NET_MODEL_CACHE_DIR "$ENV{XDG_CACHE_HOME}/u2net" CACHE PATH "Directory to cache downloaded models" FORCE)
+    else()
+        set(U2NET_MODEL_CACHE_DIR "$ENV{HOME}/.cache/u2net" CACHE PATH "Directory to cache downloaded models" FORCE)
+    endif()
+endif()
+
+message(STATUS "📦 Model cache directory: ${U2NET_MODEL_CACHE_DIR}")
+
 if(U2NET_DOWNLOAD_MODELS)
     message(STATUS "📦 U²-Net model download enabled")
     
@@ -25,61 +36,154 @@ if(U2NET_DOWNLOAD_MODELS)
     # Clean cache if requested
     if(U2NET_CLEAN_CACHE)
         u2net_clean_cache()
+        message(STATUS "🧹 Model cache cleaned")
     endif()
     
     # Download required models
+    message(STATUS "📥 Downloading U²-Net models...")
     u2net_download_models()
     
-    # Verify model integrity
+    # Verify model integrity with enhanced reporting
     message(STATUS "=== Model Integrity Verification ===")
     set(MODELS_OK TRUE)
+    set(MODEL_VERIFICATION_RESULTS "")
     foreach(model_name u2net u2netp)
         u2net_verify_model_integrity(${model_name} verified)
         if(NOT verified)
             set(MODELS_OK FALSE)
+            set(MODEL_VERIFICATION_RESULTS "${MODEL_VERIFICATION_RESULTS}❌ ${model_name}: FAILED\n")
             message(WARNING "❌ Model ${model_name} verification failed")
         else()
+            set(MODEL_VERIFICATION_RESULTS "${MODEL_VERIFICATION_RESULTS}✅ ${model_name}: VERIFIED\n")
             message(STATUS "✅ Model ${model_name} verified")
         endif()
     endforeach()
     
+    # Enhanced error reporting for failed verification
     if(NOT MODELS_OK)
-        message(FATAL_ERROR "❌ Model integrity verification failed. Check your network connection and model sources.")
+        message(WARNING "Model verification results:\n${MODEL_VERIFICATION_RESULTS}")
+        
+        if(U2NET_OFFLINE_MODE)
+            message(FATAL_ERROR "❌ Model integrity verification failed in offline mode. Check your cached models or disable offline mode.")
+        else()
+            message(FATAL_ERROR "❌ Model integrity verification failed. Possible issues:\n1. Network connection problems\n2. Corrupted download - try U2NET_CLEAN_CACHE=ON\n3. Model source unavailable - check internet connection")
+        endif()
     endif()
     
-    # Set model paths for use in executables
+    # Set model paths for use in executables with enhanced feedback
     u2net_get_model_path("u2net" U2NET_MODEL_PATH)
     if(U2NET_MODEL_PATH)
         add_definitions(-DU2NET_MODEL_PATH="${U2NET_MODEL_PATH}")
         message(STATUS "✅ U²-Net model path: ${U2NET_MODEL_PATH}")
+    else()
+        message(WARNING "⚠️  U²-Net model path not found after download")
     endif()
     
     u2net_get_model_path("u2netp" U2NETP_MODEL_PATH)
     if(U2NETP_MODEL_PATH)
         add_definitions(-DU2NETP_MODEL_PATH="${U2NETP_MODEL_PATH}")
         message(STATUS "✅ U²-Net Portrait model path: ${U2NETP_MODEL_PATH}")
+    else()
+        message(WARNING "⚠️  U²-Net Portrait model path not found after download")
+    endif()
+    
+    # Final model availability check
+    u2net_models_available(models_available)
+    if(models_available)
+        message(STATUS "🎉 All required models are available and verified!")
+    else()
+        message(WARNING "⚠️  Some models are still missing after download process")
     endif()
     
 else()
     message(STATUS "📦 U²-Net model download disabled")
-    message(STATUS "   Make sure models exist in the models/ directory:")
+    message(STATUS "   Manual model placement required:")
+    message(STATUS "   Expected locations:")
     message(STATUS "   - models/u2net.onnx")
     message(STATUS "   - models/u2netp.onnx")
     
-    # Still set paths for manual placement
+    # Check for existing manual model placement
+    set(MANUAL_MODELS_FOUND TRUE)
+    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/models/u2net.onnx")
+        set(MANUAL_MODELS_FOUND FALSE)
+        message(WARNING "⚠️  Manual model placement: u2net.onnx not found")
+    endif()
+    
+    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/models/u2netp.onnx")
+        message(WARNING "⚠️  Manual model placement: u2netp.onnx not found (optional)")
+    endif()
+    
+    if(MANUAL_MODELS_FOUND)
+        message(STATUS "✅ Manual model placement detected")
+    endif()
+    
+    # Set paths for manual placement with backward compatibility
     if(EXISTS "${CMAKE_SOURCE_DIR}/models/u2net.onnx")
         add_definitions(-DU2NET_MODEL_PATH="${CMAKE_SOURCE_DIR}/models/u2net.onnx")
+        message(STATUS "✅ Using manually placed U²-Net model: ${CMAKE_SOURCE_DIR}/models/u2net.onnx")
     endif()
     
     if(EXISTS "${CMAKE_SOURCE_DIR}/models/u2netp.onnx")
         add_definitions(-DU2NETP_MODEL_PATH="${CMAKE_SOURCE_DIR}/models/u2netp.onnx")
+        message(STATUS "✅ Using manually placed U²-Net Portrait model: ${CMAKE_SOURCE_DIR}/models/u2netp.onnx")
     endif()
 endif()
 
 # Create models directory if it doesn't exist
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/models")
     file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/models")
+    message(STATUS "📁 Created models directory: ${CMAKE_SOURCE_DIR}/models")
 endif()
+
+# Enhanced model information display
+message(STATUS "=== Model Configuration Summary ===")
+if(U2NET_DOWNLOAD_MODELS)
+    message(STATUS "📦 Model Download: ENABLED")
+    message(STATUS "📂 Cache Directory: ${U2NET_MODEL_CACHE_DIR}")
+    message(STATUS "🔒 Offline Mode: ${U2NET_OFFLINE_MODE}")
+    message(STATUS "🧹 Clean Cache: ${U2NET_CLEAN_CACHE}")
+    
+    # Get all model paths using the comprehensive function
+    u2net_get_all_model_paths(model_paths)
+    if(model_paths)
+        message(STATUS "📋 Model Paths:")
+        foreach(model_path ${model_paths})
+            # Parse model_path format: "name=path"
+            string(REPLACE "=" " " model_parts ${model_path})
+            list(GET model_parts 0 model_name)
+            list(GET model_parts 1 path)
+            message(STATUS "   ✅ ${model_name}: ${path}")
+        endforeach()
+    endif()
+    
+    # Check availability with detailed reporting
+    u2net_models_available(models_available)
+    if(models_available)
+        message(STATUS "🎯 Model Status: ALL AVAILABLE")
+    else()
+        message(STATUS "⚠️  Model Status: SOME MISSING")
+    endif()
+else()
+    message(STATUS "📦 Model Download: DISABLED (Manual placement)")
+    message(STATUS "📂 Expected Directory: ${CMAKE_SOURCE_DIR}/models")
+    
+    # Check manual placement with detailed status
+    set(MANUAL_CHECK_RESULTS "")
+    if(EXISTS "${CMAKE_SOURCE_DIR}/models/u2net.onnx")
+        set(MANUAL_CHECK_RESULTS "${MANUAL_CHECK_RESULTS}✅ u2net.onnx: Found\n")
+    else()
+        set(MANUAL_CHECK_RESULTS "${MANUAL_CHECK_RESULTS}❌ u2net.onnx: Missing (required)\n")
+    endif()
+    
+    if(EXISTS "${CMAKE_SOURCE_DIR}/models/u2netp.onnx")
+        set(MANUAL_CHECK_RESULTS "${MANUAL_CHECK_RESULTS}✅ u2netp.onnx: Found\n")
+    else()
+        set(MANUAL_CHECK_RESULTS "${MANUAL_CHECK_RESULTS}⚠️  u2netp.onnx: Missing (optional)\n")
+    endif()
+    
+    message(STATUS "Manual Model Status:\n${MANUAL_CHECK_RESULTS}")
+endif()
+message(STATUS "====================================")
 
 # Show model information in verbose builds
 if(CMAKE_VERBOSE_MAKEFILE)
