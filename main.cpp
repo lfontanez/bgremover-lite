@@ -89,36 +89,64 @@ int main(int argc, char** argv) {
 
     cout << "Press ESC to quit\n";
     Mat frame;
+    bool first_frame = true;
+    
+    // Pre-allocate buffers for efficient 1080p processing
+    Mat mask, output, blurred;
+    
     while (cap.read(frame)) {
-        Mat mask = run_inference(session, frame);
-
-        // Simple, reliable, fast blending - direct pixel operations
-        Mat blurred;
-        GaussianBlur(frame, blurred, Size(15, 15), 0);
-        
-        // Clean, simple mask (0 or 255)
-        mask = (mask > 128) * 255;  // Simple threshold
-        
-        // Direct pixel-level blend - most reliable for colors
-        Mat output = frame.clone();
-        for (int y = 0; y < frame.rows; y++) {
-            for (int x = 0; x < frame.cols; x++) {
-                uchar m = mask.at<uchar>(y, x);  // 0 or 255
-                if (m == 0) {
-                    // Outside mask - use blurred
-                    output.at<Vec3b>(y, x) = blurred.at<Vec3b>(y, x);
-                } else {
-                    // Inside mask - use original
-                    output.at<Vec3b>(y, x) = frame.at<Vec3b>(y, x);
-                }
+        // Ensure consistent frame size for 1080p processing
+        if (frame.cols != width || frame.rows != height) {
+            resize(frame, frame, Size(width, height));
+            if (first_frame) {
+                cout << "📐 Resized input to: " << width << "x" << height << " for 1080p processing" << endl;
             }
         }
+        
+        // Run inference on downsampled frame (U²-Net processes at 320x320)
+        Mat downsampled;
+        resize(frame, downsampled, Size(320, 320));
+        Mat mask_320 = run_inference(session, downsampled);
+        
+        // Resize mask back to full resolution
+        resize(mask_320, mask, frame.size());
+        
+        // Pre-allocate blurred frame for 1080p efficiency
+        if (first_frame || blurred.empty() || blurred.size() != frame.size()) {
+            blurred.create(frame.size(), frame.type());
+        }
+        
+        // Apply Gaussian blur to frame
+        GaussianBlur(frame, blurred, Size(15, 15), 0);
+        
+        // Ensure output frame is properly allocated
+        if (first_frame || output.empty() || output.size() != frame.size()) {
+            output.create(frame.size(), frame.type());
+        }
+        
+        // Optimized pixel-level blend for 1080p
+        Mat mask_clean = (mask > 0.5);
+        frame.copyTo(output, mask_clean);
+        output.setTo(blurred, ~mask_clean);
 
-        imshow("Background Removed", output);
+        string window_title = "1080p Background Removed (CPU)";
+        imshow(window_title, output);
         if (waitKey(1) == 27) break;  // ESC
+        
+        first_frame = false;
     }
 
+    // Cleanup
     cap.release();
     destroyAllWindows();
+    
+    // Release pre-allocated matrices
+    frame.release();
+    mask.release();
+    output.release();
+    blurred.release();
+    
+    cout << "🧹 1080p CPU processing cleanup completed" << endl;
+    
     return 0;
 }

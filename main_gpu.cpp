@@ -325,15 +325,20 @@ int main(int argc, char** argv) {
     if (vcam_enabled) {
         cout << "Initializing virtual camera at: " << vcam_device << "\n";
         
-        // Validate high resolution for virtual camera
-        if (width * height >= 1920 * 1080) {
-            cout << "🖥️ High resolution virtual camera: " << width << "x" << height << "\n";
+        // Ensure 1080p support for virtual camera
+        int vcam_width = std::max(width, 1920);
+        int vcam_height = std::max(height, 1080);
+        
+        if (vcam_width * vcam_height >= 1920 * 1080) {
+            cout << "🖥️ 1080p HD virtual camera: " << vcam_width << "x" << vcam_height << "\n";
+        } else {
+            cout << "📺 Virtual camera: " << vcam_width << "x" << vcam_height << "\n";
         }
         
-        vcam_output = std::make_unique<V4L2Output>(vcam_device, width, height);
+        vcam_output = std::make_unique<V4L2Output>(vcam_device, vcam_width, vcam_height);
         if (vcam_output->open()) {
             vcam_opened = true;
-            cout << "✅ Virtual camera enabled: " << vcam_device << " (" 
+            cout << "✅ 1080p Virtual camera enabled: " << vcam_device << " (" 
                  << vcam_output->getSize().width << "x" << vcam_output->getSize().height << ")\n";
         } else {
             cout << "⚠️ Virtual camera failed to open, continuing without it\n";
@@ -406,13 +411,19 @@ int main(int argc, char** argv) {
     // Initialize GPU memory manager before session creation
     gpu_manager.initializeCUDA();
     
+    // Enhanced memory management for 1080p processing
+    size_t estimated_1080p_memory = static_cast<size_t>(width) * height * 3 * sizeof(uchar) * 4; // 4 frames buffer
+    double estimated_1080p_mb = estimated_1080p_memory / (1024.0 * 1024.0);
+    
     bool cuda_used = false;
     if (cuda_available) {
         cout << "🚀 GPU acceleration enabled!" << endl;
+        cout << "📊 1080p processing requires ~" << estimated_1080p_mb << "MB for frame buffers" << endl;
         gpu_manager.printMemoryStats("after model load");
         cuda_used = true;
     } else {
         cout << "⚠️  Using CPU fallback (GPU not available or not configured)" << endl;
+        cout << "📊 1080p CPU processing may be slower - consider GPU version for optimal performance" << endl;
     }
     
     cout << "Model loaded successfully!\n";
@@ -422,12 +433,46 @@ int main(int argc, char** argv) {
     auto start_time = chrono::high_resolution_clock::now();
     int frame_count = 0;
     
+    // Pre-allocate buffers for 1080p processing to avoid frequent allocations
+    Mat mask, output, blurred;
+    bool first_frame = true;
+    
     while (cap.read(frame)) {
-        // Run inference
-        Mat mask = run_inference(session, frame, cuda_available);
+        // Ensure frame dimensions are suitable for 1080p processing
+        if (frame.cols != width || frame.rows != height) {
+            resize(frame, frame, Size(width, height));
+            if (first_frame) {
+                cout << "📐 Resized input to: " << width << "x" << height << " for 1080p processing" << endl;
+            }
+        }
         
-        // Optimized blending
-        Mat output = fast_blend(frame, mask);
+        // Run inference on downsampled frame (U²-Net processes at 320x320)
+        Mat downsampled;
+        resize(frame, downsampled, Size(320, 320));
+        Mat mask_320 = run_inference(session, downsampled, cuda_available);
+        
+        // Resize mask back to full resolution
+        resize(mask_320, mask, frame.size());
+        
+        // Pre-allocate blurred frame for 1080p efficiency
+        if (first_frame || blurred.empty() || blurred.size() != frame.size()) {
+            blurred.create(frame.size(), frame.type());
+        }
+        
+        // Optimized blending for 1080p
+        GaussianBlur(frame, blurred, Size(15, 15), 0);
+        
+        // Clean, optimized mask for 1080p
+        Mat mask_clean = (mask > 0.5);
+        
+        // Ensure output frame is properly allocated
+        if (first_frame || output.empty() || output.size() != frame.size()) {
+            output.create(frame.size(), frame.type());
+        }
+        
+        // Fast pixel-level blend optimized for 1080p
+        frame.copyTo(output, mask_clean);
+        output.setTo(blurred, ~mask_clean);
         
         // Write to virtual camera if enabled and open
         if (vcam_enabled && vcam_opened && vcam_output) {
@@ -438,12 +483,12 @@ int main(int argc, char** argv) {
         
         // Show window with appropriate title
         string window_title = cuda_available ? 
-            (vcam_enabled ? "Background Removed (GPU + Virtual Camera)" : "Background Removed (GPU)") :
-            (vcam_enabled ? "Background Removed (CPU + Virtual Camera)" : "Background Removed (CPU)");
+            (vcam_enabled ? "1080p Background Removed (GPU + Virtual Camera)" : "1080p Background Removed (GPU)") :
+            (vcam_enabled ? "1080p Background Removed (CPU + Virtual Camera)" : "1080p Background Removed (CPU)");
         imshow(window_title, output);
         if (waitKey(1) == 27) break;  // ESC
         
-        // Enhanced performance monitoring with GPU memory
+        // Enhanced performance monitoring with memory info for 1080p
         frame_count++;
         if (frame_count % 10 == 0) {  // More frequent updates
             auto current_time = chrono::high_resolution_clock::now();
@@ -456,8 +501,8 @@ int main(int argc, char** argv) {
             }
             
             string perf_label = cuda_available ? 
-                (vcam_enabled ? "GPU + VCam" : "GPU") : 
-                (vcam_enabled ? "CPU + VCam" : "CPU");
+                (vcam_enabled ? "1080p GPU + VCam" : "1080p GPU") : 
+                (vcam_enabled ? "1080p CPU + VCam" : "1080p CPU");
             cout << "🚀 " << perf_label << " Performance: " 
                  << fps_real << " FPS (" << frame_count << " frames in "
                  << duration.count() << "ms)" << endl;
@@ -466,15 +511,31 @@ int main(int argc, char** argv) {
             frame_count = 0;
             start_time = current_time;
         }
+        
+        first_frame = false;
     }
 
+    // Proper cleanup for 1080p processing
     cap.release();
     destroyAllWindows();
+    
+    // Final memory stats
+    if (cuda_available && cuda_used) {
+        gpu_manager.printMemoryStats("after processing");
+    }
     
     // Clean up virtual camera
     if (vcam_output) {
         vcam_output->close();
     }
+    
+    // Clear pre-allocated matrices to free memory
+    frame.release();
+    mask.release();
+    output.release();
+    blurred.release();
+    
+    cout << "🧹 1080p processing cleanup completed" << endl;
     
     return 0;
 }

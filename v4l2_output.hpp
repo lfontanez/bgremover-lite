@@ -20,6 +20,7 @@
  * 
  * Key features:
  * - RAII pattern for automatic resource cleanup
+ * - 1080p HD support by default (1920x1080)
  * - YUYV format (most compatible with Zoom, Teams, etc.)
  * - Efficient color space conversion
  * - Comprehensive error handling
@@ -38,6 +39,7 @@ public:
                int width = 1920, int height = 1080)
         : device_path_(device_path), fd_(-1), width_(width), height_(height), 
           is_open_(false) {
+        std::cout << "V4L2Output: Configured for " << width_ << "x" << height_ << " (1080p HD)" << std::endl;
     }
     
     /**
