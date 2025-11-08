@@ -521,17 +521,22 @@ else()
     endif()
 endif()
 
-# ==== Find OpenCV (disable CUDA dependency) ====
-# Completely disable CUDA for OpenCV to avoid package conflicts
+# ==== Find OpenCV without CUDA dependencies ====
+# Disable CUDA for OpenCV to avoid package conflicts with conda environments
+# We still use CUDA for ONNX Runtime GPU acceleration in our code
 set(CMAKE_DISABLE_FIND_PACKAGE_CUDA TRUE)
 
-# Set environment to prevent CUDA lookups
-if(DEFINED CUDA_PATH)
-    set(ENV{CUDA_DIR} "")
-    set(ENV{CUDA_PATH} "")
+# Set OpenCV directory if not already set
+if(NOT OpenCV_DIR)
+    # Try to find OpenCV in common conda locations
+    if(DEFINED ENV{CONDA_DEFAULT_ENV})
+        if(EXISTS "$ENV{CONDA_PREFIX}/lib/cmake/opencv4")
+            set(OpenCV_DIR "$ENV{CONDA_PREFIX}/lib/cmake/opencv4")
+        endif()
+    endif()
 endif()
 
-# Find OpenCV without CUDA
+# Find OpenCV without CUDA dependencies
 find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui dnn)
 message(STATUS "Found OpenCV version: ${OpenCV_VERSION}")
 message(STATUS "OpenCV include dirs: ${OpenCV_INCLUDE_DIRS}")
@@ -790,7 +795,38 @@ if(CUDA_AVAILABLE)
     message(STATUS "🧪 Building GPU test utilities with CUDA 12.8")
 endif()
 
-# ==== Optional RPATH setup (so ONNX Runtime lib is found at runtime) ====
-set_target_properties(bgremover bgremover_gpu test_model debug_colors test_performance
-    PROPERTIES BUILD_RPATH "${ONNXRUNTIME_LIB_DIR}"
+# ==== Enhanced RPATH setup (so libraries are found at runtime) ====
+# Use $ORIGIN to look for libraries relative to the executable location
+# This makes the executables work without LD_LIBRARY_PATH
+
+# Determine library search paths
+set(RUNTIME_LIBRARY_PATHS)
+list(APPEND RUNTIME_LIBRARY_PATHS "$ORIGIN")              # Same directory as executable
+list(APPEND RUNTIME_LIBRARY_PATHS "$ORIGIN/../lib")       # ../lib relative to executable
+list(APPEND RUNTIME_LIBRARY_PATHS "${ONNXRUNTIME_LIB_DIR}")  # ONNX Runtime library directory
+list(APPEND RUNTIME_LIBRARY_PATHS "/usr/lib/x86_64-linux-gnu")  # System libraries
+list(APPEND RUNTIME_LIBRARY_PATHS "/lib/x86_64-linux-gnu")      # System libraries
+
+# Add conda environment library paths if they exist
+if(OpenCV_DIR)
+    get_filename_component(OpenCV_LIB_DIR "${OpenCV_DIR}/../lib" ABSOLUTE)
+    if(EXISTS "${OpenCV_LIB_DIR}")
+        list(APPEND RUNTIME_LIBRARY_PATHS "${OpenCV_LIB_DIR}")
+    endif()
+endif()
+
+# Join paths with colons for RPATH
+string(REPLACE ";" ":" RUNTIME_RPATH "${RUNTIME_LIBRARY_PATHS}")
+
+# Set RPATH properties for all executables
+set_target_properties(bgremover bgremover_gpu test_model debug_colors test_performance test_gpu
+    PROPERTIES
+    BUILD_RPATH "${RUNTIME_RPATH}"
+    INSTALL_RPATH "${RUNTIME_RPATH}"
+    BUILD_WITH_INSTALL_RPATH FALSE
+    SKIP_BUILD_RPATH FALSE
 )
+
+message(STATUS "🔗 RPATH configured for runtime library discovery:")
+message(STATUS "   Runtime library paths: ${RUNTIME_LIBRARY_PATHS}")
+message(STATUS "   Combined RPATH: ${RUNTIME_RPATH}")

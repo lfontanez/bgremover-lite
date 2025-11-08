@@ -263,26 +263,17 @@ main() {
     # Check if we're in a Conda environment
     if [[ -n "$CONDA_DEFAULT_ENV" ]]; then
         log_info "Running in Conda environment: $CONDA_DEFAULT_ENV"
+        # Respect the current environment - don't override it
+        if [[ "$CONDA_DEFAULT_ENV" == "opencv_cuda12" ]]; then
+            log_success "✅ Using CUDA-enabled OpenCV environment"
+        elif [[ "$CONDA_DEFAULT_ENV" == "opencv_cpu" ]]; then
+            log_info "Using CPU-only OpenCV environment"
+        else
+            log_info "Using custom Conda environment: $CONDA_DEFAULT_ENV"
+        fi
     else
         log_info "Running in system environment"
-        
-        # Try to activate CPU-only OpenCV environment if available
-        if [[ -f "$HOME/miniconda3/bin/activate" ]]; then
-            log_info "Attempting to activate CPU-only OpenCV environment..."
-            if [[ -d "$HOME/miniconda3/envs/opencv_cpu" ]]; then
-                log_info "Activating opencv_cpu environment for build compatibility..."
-                source "$HOME/miniconda3/bin/activate" opencv_cpu
-                if [[ "$CONDA_DEFAULT_ENV" == "opencv_cpu" ]]; then
-                    log_success "✅ Successfully activated opencv_cpu environment"
-                fi
-            elif [[ -d "$HOME/miniconda3/envs/opencv_cuda12" ]]; then
-                log_info "Falling back to opencv_cuda12 environment..."
-                source "$HOME/miniconda3/bin/activate" opencv_cuda12
-                if [[ "$CONDA_DEFAULT_ENV" == "opencv_cuda12" ]]; then
-                    log_success "✅ Successfully activated opencv_cuda12 environment"
-                fi
-            fi
-        fi
+        log_info "Using system OpenCV or conda-forge OpenCV"
     fi
     
     # Environment checks
@@ -313,10 +304,10 @@ main() {
     
     CMAKE_FLAGS="-DU2NET_DOWNLOAD_MODELS=ON"
     
-    # Temporarily disable CUDA for OpenCV to fix build compatibility
-    log_info "Building with CPU OpenCV for compatibility"
-    CMAKE_FLAGS="$CMAKE_FLAGS -DWITH_CUDA=OFF"
-    log_warning "CUDA support disabled temporarily - GPU acceleration will be handled by ONNX Runtime only"
+    # Use OpenCV's built-in CUDA support (already available in conda environment)
+    log_info "Building with system/conda-forge OpenCV"
+    # Don't override OpenCV's CUDA settings - let it use its built-in support
+    log_info "Using system OpenCV - GPU acceleration via ONNX Runtime will still be available"
     
     # Display final CMake configuration
     log_info "CMake configuration command: cmake $CMAKE_FLAGS .."
