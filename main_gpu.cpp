@@ -19,20 +19,38 @@ Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "bgremover-gpu");
 class GPUMemoryManager {
 public:
     bool cuda_available = false;
+    int device_count = 0;
+    size_t total_memory = 0;
+    size_t free_memory = 0;
     
     GPUMemoryManager() {
-        // Check if CUDA is available
-        cuda_available = false;
-        #ifdef CUDA_AVAILABLE
-        int device_count = 0;
+        initializeCUDA();
+    }
+    
+    void initializeCUDA() {
         cudaError_t error = cudaGetDeviceCount(&device_count);
         if (error == cudaSuccess && device_count > 0) {
             cuda_available = true;
-            cout << "✅ CUDA runtime initialized successfully" << endl;
+            
+            // Get memory info for the default device
+            cudaSetDevice(0);
+            error = cudaMemGetInfo(&free_memory, &total_memory);
+            if (error == cudaSuccess) {
+                double total_gb = total_memory / (1024.0 * 1024.0 * 1024.0);
+                double free_gb = free_memory / (1024.0 * 1024.0 * 1024.0);
+                cout << "✅ CUDA runtime initialized successfully" << endl;
+                cout << "✅ GPU Memory: " << free_gb << "GB free / " 
+                     << total_gb << "GB total" << endl;
+            } else {
+                cout << "⚠️  CUDA initialized but memory query failed: " 
+                     << cudaGetErrorString(error) << endl;
+                // Still set cuda_available to true since CUDA works
+                cuda_available = true;
+            }
         } else {
+            cuda_available = false;
             cout << "⚠️  CUDA runtime not available" << endl;
         }
-        #endif
     }
     
     void printMemoryStats(const string& label = "") {
@@ -41,55 +59,108 @@ public:
             return;
         }
         
-        size_t free_memory = 0, total_memory = 0;
-        cudaError_t error = cudaMemGetInfo(&free_memory, &total_memory);
+        size_t current_free = 0, current_total = 0;
+        cudaError_t error = cudaMemGetInfo(&current_free, &current_total);
         if (error == cudaSuccess) {
+            double used_gb = (current_total - current_free) / (1024.0 * 1024.0 * 1024.0);
+            double free_gb = current_free / (1024.0 * 1024.0 * 1024.0);
+            double total_gb = current_total / (1024.0 * 1024.0 * 1024.0);
+            cout << "GPU Memory " << label << ": " 
+                 << used_gb << "GB used / " << free_gb << "GB free / " 
+                 << total_gb << "GB total" << endl;
+        } else {
+            // Use cached values if current query fails
             double used_gb = (total_memory - free_memory) / (1024.0 * 1024.0 * 1024.0);
             double free_gb = free_memory / (1024.0 * 1024.0 * 1024.0);
             double total_gb = total_memory / (1024.0 * 1024.0 * 1024.0);
             cout << "GPU Memory " << label << ": " 
                  << used_gb << "GB used / " << free_gb << "GB free / " 
-                 << total_gb << "GB total" << endl;
-        } else {
-            cout << "GPU Memory " << label << ": Unable to query (Error: " << cudaGetErrorString(error) << ")" << endl;
+                 << total_gb << "GB total (cached)" << endl;
         }
     }
     
     bool hasSufficientMemory(size_t required_bytes) {
         if (!cuda_available) return false;
         
-        size_t free_memory = 0, total_memory = 0;
-        cudaError_t error = cudaMemGetInfo(&free_memory, &total_memory);
-        return (error == cudaSuccess) && (free_memory >= required_bytes);
+        // Check current free memory
+        size_t current_free = 0, current_total = 0;
+        cudaError_t error = cudaMemGetInfo(&current_free, &current_total);
+        if (error == cudaSuccess) {
+            // Be generous with memory requirements - leave 20% headroom
+            size_t safe_free = current_free * 0.8;
+            return safe_free >= required_bytes;
+        }
+        
+        // Fallback to cached values
+        size_t safe_free = free_memory * 0.8;
+        return safe_free >= required_bytes;
+    }
+    
+    void updateMemoryInfo() {
+        if (cuda_available) {
+            cudaError_t error = cudaMemGetInfo(&free_memory, &total_memory);
+            if (error != cudaSuccess) {
+                cout << "⚠️  Failed to update memory info: " 
+                     << cudaGetErrorString(error) << endl;
+            }
+        }
     }
 };
 
 // Global GPU memory manager
 GPUMemoryManager gpu_manager;
 
-// Memory Pre-allocation (CPU-based for compatibility)
+// Memory Pre-allocation with GPU/CPU support
 class BufferManager {
 public:
     Ort::MemoryInfo cpu_memory_info;
+    Ort::MemoryInfo gpu_memory_info;
     std::vector<Ort::Value> preallocated_buffers;
     bool initialized = false;
+    bool use_gpu_memory = false;
     
-    BufferManager() : cpu_memory_info("Cpu", OrtArenaAllocator, 0, OrtMemTypeDefault) {
+    BufferManager() {
+        // Initialize both memory info types
+        cpu_memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
         initialized = false;
+        use_gpu_memory = false;
     }
     
-    void initialize() {
+    void initialize(bool cuda_available) {
         if (initialized) return;
         
-        // Ensure memory info is properly initialized
-        cpu_memory_info = Ort::MemoryInfo("Cpu", OrtArenaAllocator, 0, OrtMemTypeDefault);
+        // Set CPU memory info
+        cpu_memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+        
+        // Set GPU memory info if CUDA is available
+        if (cuda_available) {
+            try {
+                gpu_memory_info = Ort::MemoryInfo::CreateCuda(OrtArenaAllocator);
+                use_gpu_memory = true;
+                cout << "✅ Memory manager initialized (GPU mode)" << endl;
+            } catch (const Ort::Exception& e) {
+                cout << "⚠️  GPU memory info creation failed, using CPU: " << e.what() << endl;
+                use_gpu_memory = false;
+                cout << "✅ Memory manager initialized (CPU mode)" << endl;
+            }
+        } else {
+            use_gpu_memory = false;
+            cout << "✅ Memory manager initialized (CPU mode)" << endl;
+        }
+        
         initialized = true;
-        cout << "✅ Memory manager initialized (CPU mode)" << endl;
     }
     
     Ort::MemoryInfo& getMemoryInfo() {
-        if (!initialized) initialize();
-        return cpu_memory_info;
+        if (!initialized) {
+            // This should not happen if initialize() was called properly
+            initialize(false);
+        }
+        return use_gpu_memory ? gpu_memory_info : cpu_memory_info;
+    }
+    
+    bool isUsingGPU() const {
+        return initialized && use_gpu_memory;
     }
 };
 
@@ -99,11 +170,11 @@ static BufferManager buffer_manager;
 Mat run_inference(Ort::Session& session, const Mat& img, bool cuda_available) {
     auto start_time = std::chrono::high_resolution_clock::now();
     
-    // Initialize memory manager
-    buffer_manager.initialize();
+    // Initialize memory manager with CUDA availability
+    buffer_manager.initialize(cuda_available);
     Ort::MemoryInfo& mem_info = buffer_manager.getMemoryInfo();
     
-    // Preprocess on CPU
+    // Preprocess on CPU (always, for compatibility)
     Mat resized;
     resize(img, resized, Size(320, 320));
     resized.convertTo(resized, CV_32F, 1.0f / 255.0f);
@@ -112,11 +183,22 @@ Mat run_inference(Ort::Session& session, const Mat& img, bool cuda_available) {
     array<int64_t, 4> shape = {1, 3, 320, 320};
     Ort::AllocatorWithDefaultOptions allocator;
     
-    // Check GPU memory availability if CUDA is supposedly available
+    // Check GPU memory availability - be more realistic for 15GB GPU
     size_t required_memory = blob.total() * sizeof(float);
+    size_t required_gb = required_memory / (1024.0 * 1024.0 * 1024.0);
+    
     if (cuda_available && !gpu_manager.hasSufficientMemory(required_memory)) {
-        cout << "⚠️  Insufficient GPU memory, using CPU fallback" << endl;
+        double required_mb = required_memory / (1024.0 * 1024.0);
+        cout << "⚠️  Insufficient GPU memory (" << required_mb << "MB required), using CPU fallback" << endl;
         cuda_available = false;
+    } else if (cuda_available) {
+        double required_mb = required_memory / (1024.0 * 1024.0);
+        cout << "✅ GPU memory sufficient (" << required_mb << "MB required)" << endl;
+    }
+    
+    // Re-initialize memory manager if CUDA availability changed
+    if (cuda_available != buffer_manager.isUsingGPU()) {
+        buffer_manager.initialize(cuda_available);
     }
     
     // Allocate input tensor
@@ -162,7 +244,9 @@ Mat run_inference(Ort::Session& session, const Mat& img, bool cuda_available) {
     frame_count++;
     
     if (std::chrono::duration_cast<std::chrono::seconds>(end_time - last_print_time).count() >= 2) {
-        gpu_manager.printMemoryStats();
+        if (cuda_available) {
+            gpu_manager.printMemoryStats();
+        }
         cout << (cuda_available ? "🚀 GPU" : "⚡ CPU") << " Performance: " 
              << frame_count / 2.0 << " FPS | Inference: " 
              << inference_duration.count() << "ms | Total: " 
@@ -272,13 +356,14 @@ int main(int argc, char** argv) {
     // Create session
     Ort::Session session(env, "models/u2net.onnx", session_options);
     
-    // Initialize GPU memory manager after session creation
-    gpu_manager = GPUMemoryManager();
+    // Initialize GPU memory manager before session creation
+    gpu_manager.initializeCUDA();
     
     bool cuda_used = false;
     if (cuda_available) {
         cout << "🚀 GPU acceleration enabled!" << endl;
         gpu_manager.printMemoryStats("after model load");
+        cuda_used = true;
     } else {
         cout << "⚠️  Using CPU fallback (GPU not available or not configured)" << endl;
     }
