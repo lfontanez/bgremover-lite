@@ -211,8 +211,8 @@ private:
     /**
      * Convert BGR image to YUYV format
      * 
-     * YUYV format: 2 bytes per pixel, YUYV ordering
-     * Pixel structure: [Y0][U0][Y1][V0] (4 bytes for 2 pixels)
+     * YUYV format: 2 bytes per pixel, packed as Y0 U0 Y1 V0
+     * For 2 pixels: [Y0][U0][Y1][V0] (4 bytes total)
      * 
      * @param bgr_frame Input BGR frame
      * @param yuyv_frame Output YUYV frame
@@ -222,8 +222,8 @@ private:
         int width = bgr_frame.cols;
         int height = bgr_frame.rows;
         
-        // YUYV is 2 bytes per pixel
-        yuyv_frame.create(height, width, CV_8UC2);
+        // YUYV is 2 bytes per pixel, stored as single channel with width*2 columns
+        yuyv_frame.create(height, width * 2, CV_8UC1);
         
         // Conversion coefficients (BT.601 standard)
         const float wr = 0.299f, wg = 0.587f, wb = 0.114f;
@@ -231,41 +231,37 @@ private:
         
         for (int y = 0; y < height; ++y) {
             const cv::Vec3b* bgr_row = bgr_frame.ptr<cv::Vec3b>(y);
-            cv::Vec2b* yuyv_row = yuyv_frame.ptr<cv::Vec2b>(y);
+            uchar* yuyv_row = yuyv_frame.ptr<uchar>(y);
             
             for (int x = 0; x < width; x += 2) {
-                // Process two pixels at a time
-                for (int p = 0; p < 2 && (x + p) < width; ++p) {
-                    const cv::Vec3b& bgr = bgr_row[x + p];
-                    float B = bgr[0] / 255.0f;
-                    float G = bgr[1] / 255.0f;
-                    float R = bgr[2] / 255.0f;
+                // Process first pixel
+                const cv::Vec3b& bgr0 = bgr_row[x];
+                float B0 = bgr0[0] / 255.0f;
+                float G0 = bgr0[1] / 255.0f;
+                float R0 = bgr0[2] / 255.0f;
+                
+                // Calculate Y0
+                float Y0 = wr * R0 + wg * G0 + wb * B0;
+                Y0 = std::clamp(Y0, 0.0f, 1.0f);
+                uchar y0_value = static_cast<uchar>(Y0 * 255.0f);
+                
+                // Process second pixel if available
+                uchar y1_value = 0;
+                if (x + 1 < width) {
+                    const cv::Vec3b& bgr1 = bgr_row[x + 1];
+                    float B1 = bgr1[0] / 255.0f;
+                    float G1 = bgr1[1] / 255.0f;
+                    float R1 = bgr1[2] / 255.0f;
                     
-                    // Calculate Y (luminance)
-                    float Y = wr * R + wg * G + wb * B;
-                    Y = std::clamp(Y, 0.0f, 1.0f);
-                    uchar y_value = static_cast<uchar>(Y * 255.0f);
-                    
-                    // Store Y value in appropriate position
-                    if (p == 0) {
-                        yuyv_row[x/2][0] = y_value; // Y0
-                    } else {
-                        yuyv_row[x/2][2] = y_value; // Y1 (stored in second byte)
-                    }
+                    // Calculate Y1
+                    float Y1 = wr * R1 + wg * G1 + wb * B1;
+                    Y1 = std::clamp(Y1, 0.0f, 1.0f);
+                    y1_value = static_cast<uchar>(Y1 * 255.0f);
                 }
                 
                 // Calculate U and V from the first pixel
-                const cv::Vec3b& bgr = bgr_row[x];
-                float B = bgr[0] / 255.0f;
-                float G = bgr[1] / 255.0f;
-                float R = bgr[2] / 255.0f;
-                
-                // Calculate Y for the first pixel before using it in U/V calculation
-                float Y = wr * R + wg * G + wb * B;
-                Y = std::clamp(Y, 0.0f, 1.0f);
-                
-                float U = (B - Y) * u_max;
-                float V = (R - Y) * v_max;
+                float U = (B0 - Y0) * u_max;
+                float V = (R0 - Y0) * v_max;
                 
                 U = std::clamp(U, -0.436f, 0.436f);
                 V = std::clamp(V, -0.615f, 0.615f);
@@ -273,9 +269,11 @@ private:
                 uchar u_value = static_cast<uchar>((U + 0.436f) * 255.0f / (2 * 0.436f));
                 uchar v_value = static_cast<uchar>((V + 0.615f) * 255.0f / (2 * 0.615f));
                 
-                // U0 and V0
-                yuyv_row[x/2][1] = u_value;
-                yuyv_row[x/2][3] = v_value;
+                // Store packed YUYV: Y0 U0 Y1 V0
+                yuyv_row[x * 2] = y0_value;     // Y0
+                yuyv_row[x * 2 + 1] = u_value;  // U0
+                yuyv_row[x * 2 + 2] = y1_value; // Y1
+                yuyv_row[x * 2 + 3] = v_value;  // V0
             }
         }
         
