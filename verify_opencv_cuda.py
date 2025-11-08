@@ -23,10 +23,13 @@ def check_opencv_cuda():
             print("✅ OpenCV CUDA support is available!")
             for i in range(cuda_count):
                 try:
-                    props = cv2.cuda.getDeviceProperties(i)
-                    print(f"  Device {i}: {props.name}")
-                    print(f"    Compute capability: {props.major}.{props.minor}")
-                    print(f"    Total memory: {props.totalGlobalMem / 1024 ** 3:.2f} GB")
+                    if hasattr(cv2.cuda, 'getDeviceProperties'):
+                        props = cv2.cuda.getDeviceProperties(i)
+                        print(f"  Device {i}: {props.name}")
+                        print(f"    Compute capability: {props.major}.{props.minor}")
+                        print(f"    Total memory: {props.totalGlobalMem / 1024 ** 3:.2f} GB")
+                    else:
+                        print(f"  Device {i}: CUDA device detected (getDeviceProperties not available)")
                 except Exception as e:
                     print(f"  ⚠️  Could not query device {i}: {e}")
             return True
