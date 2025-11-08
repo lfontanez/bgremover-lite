@@ -325,15 +325,11 @@ int main(int argc, char** argv) {
     if (vcam_enabled) {
         cout << "Initializing virtual camera at: " << vcam_device << "\n";
         
-        // Ensure 1080p support for virtual camera
-        int vcam_width = std::max(width, 1920);
-        int vcam_height = std::max(height, 1080);
+        // Always use 1080p for virtual camera output
+        const int vcam_width = 1920;
+        const int vcam_height = 1080;
         
-        if (vcam_width * vcam_height >= 1920 * 1080) {
-            cout << "🖥️ 1080p HD virtual camera: " << vcam_width << "x" << vcam_height << "\n";
-        } else {
-            cout << "📺 Virtual camera: " << vcam_width << "x" << vcam_height << "\n";
-        }
+        cout << "🖥️ 1080p HD virtual camera: " << vcam_width << "x" << vcam_height << "\n";
         
         vcam_output = std::make_unique<V4L2Output>(vcam_device, vcam_width, vcam_height);
         if (vcam_output->open()) {
@@ -443,6 +439,16 @@ int main(int argc, char** argv) {
             resize(frame, frame, Size(width, height));
             if (first_frame) {
                 cout << "📐 Resized input to: " << width << "x" << height << " for 1080p processing" << endl;
+            }
+        }
+        
+        // Auto-resize to 1080p for virtual camera output if enabled
+        if (vcam_enabled) {
+            if (frame.cols != 1920 || frame.rows != 1080) {
+                resize(frame, frame, Size(1920, 1080));
+                if (first_frame) {
+                    cout << "🖥️ Auto-resized to 1080p for virtual camera: 1920x1080" << endl;
+                }
             }
         }
         
