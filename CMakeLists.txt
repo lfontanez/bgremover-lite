@@ -295,8 +295,11 @@ else()
         unset(test_content)
     endmacro()
     
+    # Process model paths with enhanced error handling
+    message(STATUS "=== Manual Model Path Resolution ===")
     SET_MODEL_PATH("${CMAKE_SOURCE_DIR}/models/u2net.onnx" "U2NET_MODEL_PATH")
     SET_MODEL_PATH("${CMAKE_SOURCE_DIR}/models/u2netp.onnx" "U2NETP_MODEL_PATH")
+    message(STATUS "=== End Manual Model Path Resolution ===")
 endif()
 
 # Create models directory if it doesn't exist with enhanced error handling
