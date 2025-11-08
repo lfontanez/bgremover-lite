@@ -64,6 +64,23 @@ log_header() {
     echo "=== $1 ==="
 }
 
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+log_header() {
+    echo ""
+    echo "=== $1 ==="
+}
+
 # Global variables
 CUDA_AVAILABLE=false
 NVCC_AVAILABLE=false
@@ -538,6 +555,103 @@ check_python_opencv_shadowing() {
     return 0
 }
 
+# Enhanced CUDA environment setup with automatic detection and configuration
+setup_cuda_environment() {
+    log_header "CUDA Environment Setup"
+    
+    # Try to source existing setup script if it exists
+    if [[ -f "./setup_cuda_env.sh" ]]; then
+        log_info "Sourcing existing CUDA environment setup script..."
+        source ./setup_cuda_env.sh
+        if [[ $? -eq 0 ]]; then
+            log_success "✅ CUDA environment setup script executed successfully"
+        else
+            log_warning "⚠️  CUDA environment setup script had issues, continuing with manual setup"
+        fi
+    fi
+    
+    # Manual CUDA environment setup as fallback
+    local cuda_root=""
+    local cuda_found=false
+    
+    # Check for CUDA 12.8 first (most likely location)
+    if [[ -d "/usr/local/cuda-12.8" ]]; then
+        cuda_root="/usr/local/cuda-12.8"
+        cuda_found=true
+        log_success "✅ Found CUDA 12.8 at: $cuda_root"
+    elif [[ -d "/usr/local/cuda" ]]; then
+        cuda_root="/usr/local/cuda"
+        cuda_found=true
+        log_success "✅ Found CUDA at: $cuda_root"
+    else
+        # Search for other CUDA installations
+        for cuda_dir in /usr/local/cuda-*; do
+            if [[ -d "$cuda_dir" && -f "$cuda_dir/include/cuda_runtime.h" ]]; then
+                cuda_root="$cuda_dir"
+                cuda_found=true
+                log_success "✅ Found CUDA at: $cuda_root"
+                break
+            fi
+        done
+    fi
+    
+    if [[ "$cuda_found" == "true" ]]; then
+        # Set CUDA environment variables
+        export CUDA_PATH="$cuda_root"
+        export CUDA_HOME="$cuda_root"
+        export CUDA_ROOT="$cuda_root"
+        
+        # Update PATH and LD_LIBRARY_PATH
+        export PATH="$cuda_root/bin:$PATH"
+        export LD_LIBRARY_PATH="$cuda_root/lib64:$LD_LIBRARY_PATH"
+        
+        # Verify CUDA headers are accessible
+        if [[ -f "$cuda_root/include/cuda_runtime.h" ]]; then
+            log_success "✅ CUDA headers found at: $cuda_root/include/cuda_runtime.h"
+        else
+            log_error "❌ CUDA headers not found at: $cuda_root/include/cuda_runtime.h"
+            return 1
+        fi
+        
+        # Verify CUDA libraries are accessible
+        if [[ -f "$cuda_root/lib64/libcudart.so" ]]; then
+            log_success "✅ CUDA libraries found at: $cuda_root/lib64/"
+        else
+            log_error "❌ CUDA libraries not found at: $cuda_root/lib64/"
+            return 1
+        fi
+        
+        # Update nvcc availability check after setting environment
+        if command -v nvcc >/dev/null 2>&1; then
+            local nvcc_version=$(nvcc --version | grep "release" | sed 's/.*release \([0-9]\+\.[0-9]\+\).*/\1/')
+            log_success "✅ NVCC available with CUDA version $nvcc_version"
+            NVCC_AVAILABLE=true
+        else
+            log_warning "⚠️  NVCC not found after setting CUDA environment"
+        fi
+        
+        # Create CMake CUDA variables for better integration
+        export CUDA_TOOLKIT_ROOT_DIR="$cuda_root"
+        export CMAKE_CUDA_COMPILER="$cuda_root/bin/nvcc"
+        
+        log_info "CUDA Environment Variables Set:"
+        log_info "  CUDA_PATH: $CUDA_PATH"
+        log_info "  CUDA_HOME: $CUDA_HOME"
+        log_info "  CUDA_ROOT: $CUDA_ROOT"
+        log_info "  CUDA_TOOLKIT_ROOT_DIR: $CUDA_TOOLKIT_ROOT_DIR"
+        log_info "  CMAKE_CUDA_COMPILER: $CMAKE_CUDA_COMPILER"
+        
+        return 0
+    else
+        log_error "❌ No suitable CUDA installation found"
+        log_info "Expected locations:"
+        echo "  • /usr/local/cuda-12.8"
+        echo "  • /usr/local/cuda"
+        echo "  • /usr/local/cuda-*"
+        return 1
+    fi
+}
+
 # Main build function
 main() {
     log_header "Background Remover Lite - Enhanced Build Script"
@@ -553,6 +667,11 @@ main() {
     
     # Environment checks
     check_nvidia_environment
+    
+    # Setup CUDA environment before other checks that depend on it
+    setup_cuda_environment
+    
+    # Re-check NVCC after CUDA environment setup
     check_nvcc
     check_opencv_cuda
     check_python_opencv_shadowing
@@ -573,28 +692,71 @@ main() {
     # Configure CMake
     log_info "Configuring with CMake..."
     
-    # Set CMake flags based on detection
+    # Enhanced CMake flags with proper CUDA path handling
     CMAKE_FLAGS=""
     
-    if [[ "$OPENCV_CUDA_SUPPORT" == "true" ]]; then
-        CMAKE_FLAGS="-DWITH_CUDA=ON -DCUDA_ARCH_BIN=$CUDA_ARCH_BIN"
+    # Add CUDA toolkit root directory if available
+    if [[ -n "$CUDA_PATH" && -d "$CUDA_PATH" ]]; then
+        CMAKE_FLAGS="-DCUDA_TOOLKIT_ROOT_DIR=$CUDA_PATH"
+        log_info "CUDA toolkit root: $CUDA_PATH"
+    fi
+    
+    # Add CUDA compiler if available
+    if [[ -n "$CMAKE_CUDA_COMPILER" && -f "$CMAKE_CUDA_COMPILER" ]]; then
+        CMAKE_FLAGS="$CMAKE_FLAGS -DCMAKE_CUDA_COMPILER=$CMAKE_CUDA_COMPILER"
+        log_info "CUDA compiler: $CMAKE_CUDA_COMPILER"
+    fi
+    
+    # Enable CUDA support based on detection
+    if [[ "$OPENCV_CUDA_SUPPORT" == "true" ]] && [[ "$NVCC_AVAILABLE" == "true" ]]; then
+        CMAKE_FLAGS="$CMAKE_FLAGS -DWITH_CUDA=ON"
+        if [[ -n "$CUDA_ARCH_BIN" ]]; then
+            CMAKE_FLAGS="$CMAKE_FLAGS -DCUDA_ARCH_BIN=$CUDA_ARCH_BIN"
+            log_info "CUDA architecture: $CUDA_ARCH_BIN"
+        fi
         log_success "CUDA support enabled in CMake"
     else
-        CMAKE_FLAGS="-DWITH_CUDA=OFF"
+        CMAKE_FLAGS="$CMAKE_FLAGS -DWITH_CUDA=OFF"
         log_warning "CUDA support disabled - building CPU-only version"
     fi
     
-    # Run CMake
-    log_info "Running: cmake $CMAKE_FLAGS .."
+    # Add additional CUDA-related flags for better integration
+    if [[ "$NVCC_AVAILABLE" == "true" ]]; then
+        CMAKE_FLAGS="$CMAKE_FLAGS -DENABLE_CUDA=ON"
+        log_info "CUDA compilation enabled"
+    fi
+    
+    # Display final CMake configuration
+    log_info "CMake configuration command: cmake $CMAKE_FLAGS .."
+    
+    # Run CMake with enhanced error handling
     if cmake $CMAKE_FLAGS ..; then
         log_success "CMake configuration successful"
+        
+        # Verify CUDA was properly detected by CMake
+        if [[ -f "CMakeCache.txt" ]]; then
+            if grep -q "CUDA_TOOLKIT_ROOT_DIR:PATH=$CUDA_PATH" CMakeCache.txt 2>/dev/null; then
+                log_success "✅ CMake correctly detected CUDA toolkit at: $CUDA_PATH"
+            else
+                log_warning "⚠️  CMake may not have detected CUDA toolkit path correctly"
+            fi
+            
+            if grep -q "CUDA_FOUND:BOOL=ON" CMakeCache.txt 2>/dev/null; then
+                log_success "✅ CMake detected CUDA support"
+            else
+                log_warning "⚠️  CMake did not enable CUDA support"
+            fi
+        fi
     else
         log_error "CMake configuration failed"
         log_info "Troubleshooting steps:"
         echo "  1. Ensure all dependencies are installed"
-        echo "  2. Check CUDA toolkit installation"
-        echo "  3. Verify OpenCV CUDA support"
-        echo "  4. Review CMake output above for specific errors"
+        echo "  2. Check CUDA toolkit installation: $CUDA_PATH"
+        echo "  3. Verify CUDA headers: $CUDA_PATH/include/cuda_runtime.h"
+        echo "  4. Verify CUDA libraries: $CUDA_PATH/lib64/"
+        echo "  5. Check OpenCV CUDA support"
+        echo "  6. Review CMake output above for specific errors"
+        echo "  7. Try: rm -rf build && ./build.sh"
         exit 1
     fi
     
