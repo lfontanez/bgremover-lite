@@ -1,32 +1,19 @@
-cmake_minimum_required(VERSION 3.16)
+#!/bin/bash
 
-# Suppress FindCUDA deprecation warnings
-if(POLICY CMP0146)
-    cmake_policy(SET CMP0146 NEW)  # Use NEW to suppress warnings, or OLD for old behavior
-endif()
+# Enhanced Build Script for BGRemover Lite
+# Supports GPU acceleration and automatic dependency resolution
 
-project(bgremover-lite LANGUAGES CXX)
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+WHITE='\033[1;37m'
+NC='\033[0m' # No Color
 
 # Logging functions
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-log_header() {
-    echo ""
-    echo "=== $1 ==="
 }
 
 log_success() {
@@ -110,32 +97,10 @@ get_cuda_arch_bin() {
         *"GTX 1050 TI"*) echo "6.1";;
         *"GTX 1050"*) echo "6.1";;
         
-        # GTX 900 Series (Maxwell)
-        *"GTX 980 TI"*) echo "5.2";;
-        *"GTX 980"*) echo "5.2";;
-        *"GTX 970"*) echo "5.2";;
-        *"GTX 960"*) echo "5.2";;
-        *"GTX 950"*) echo "5.2";;
-        
         # Professional GPUs
         *"Tesla V100"*) echo "7.0";;
         *"Tesla T4"*) echo "7.5";;
         *"Tesla A100"*) echo "8.0";;
-        *"Tesla K80"*) echo "3.7";;
-        *"Tesla K40"*) echo "3.5";;
-        *"Tesla K20"*) echo "3.5";;
-        *"Quadro RTX 8000"*) echo "7.5";;
-        *"Quadro RTX 6000"*) echo "7.5";;
-        *"Quadro RTX 5000"*) echo "7.5";;
-        *"Quadro RTX 4000"*) echo "7.5";;
-        *"Quadro RTX 3000"*) echo "7.5";;
-        *"Quadro GP100"*) echo "6.0";;
-        *"Quadro GV100"*) echo "7.0";;
-        *"Tesla P100"*) echo "6.0";;
-        *"Tesla P40"*) echo "6.1";;
-        *"Tesla P4"*) echo "6.1";;
-        
-        # Workstation cards
         *"RTX A6000"*) echo "8.6";;
         *"RTX A5000"*) echo "8.6";;
         *"RTX A4000"*) echo "8.6";;
@@ -147,16 +112,12 @@ get_cuda_arch_bin() {
     esac
 }
 
-# Enhanced NVIDIA environment detection with driver and runtime version checking
+# Enhanced NVIDIA environment detection
 check_nvidia_environment() {
     log_header "NVIDIA Environment Detection"
     
     if ! command -v nvidia-smi >/dev/null 2>&1; then
         log_error "nvidia-smi not found. NVIDIA drivers may not be installed."
-        log_info "Install NVIDIA drivers for your GPU:"
-        echo "  Ubuntu/Debian: sudo apt install nvidia-driver-470"
-        echo "  CentOS/RHEL: sudo yum install nvidia-driver"
-        echo "  Or visit: https://www.nvidia.com/drivers"
         return 1
     fi
     
@@ -175,446 +136,124 @@ check_nvidia_environment() {
     local driver_version=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader,nounits 2>/dev/null | head -n1)
     log_info "Driver Version: $driver_version"
     
-    # Get CUDA version supported by driver
-    local cuda_version=$(nvidia-smi --query-gpu=cuda_version --format=csv,noheader,nounits 2>/dev/null | head -n1)
-    if [[ -n "$cuda_version" ]]; then
-        log_info "CUDA Version: $cuda_version"
-    else
-        log_info "CUDA Version: Not available (older driver)"
-    fi
-    
     # Get GPU memory
     local gpu_memory=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -n1)
     if [[ -n "$gpu_memory" ]]; then
         local memory_gb=$((gpu_memory / 1024))
         log_info "GPU Memory: ${memory_gb}GB"
-        
-        # Check memory adequacy
-        if [[ $memory_gb -ge 8 ]]; then
-            log_success "✅ GPU has sufficient memory (${memory_gb}GB)"
-        elif [[ $memory_gb -ge 4 ]]; then
-            log_warning "⚠️  GPU has moderate memory (${memory_gb}GB) - may impact performance"
-        else
-            log_error "❌ GPU has limited memory (${memory_gb}GB) - may not be suitable"
-        fi
-    fi
-    
-    # Get GPU utilization and temperature
-    local utilization=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null | head -n1)
-    if [[ -n "$utilization" ]]; then
-        log_info "Current GPU Utilization: ${utilization}%"
-    fi
-    
-    # Validate driver version
-    local driver_major=$(echo "$driver_version" | cut -d'.' -f1)
-    if [[ $driver_major -ge 450 ]]; then
-        log_success "✅ Driver version $driver_version is compatible with modern CUDA"
-    else
-        log_warning "⚠️  Driver version $driver_version may be outdated"
     fi
     
     CUDA_AVAILABLE=true
     return 0
 }
 
-# Enhanced NVCC verification with comprehensive version checking
+# Enhanced NVCC verification
 check_nvcc() {
     log_header "CUDA Toolkit Detection"
     
     if ! command -v nvcc >/dev/null 2>&1; then
         log_error "nvcc (CUDA compiler) not found"
-        log_info "Install CUDA Toolkit:"
-        echo "  Ubuntu/Debian: sudo apt install nvidia-cuda-toolkit"
-        echo "  Or download from: https://developer.nvidia.com/cuda-downloads"
         return 1
     fi
     
-    # Get detailed NVCC version information
     local nvcc_version=$(nvcc --version | grep "release" | sed 's/.*release \([0-9]\+\.[0-9]\+\).*/\1/')
-    local nvcc_full_version=$(nvcc --version | grep "release" | sed 's/.*release \([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/')
-    local nvcc_cuda_version=$(nvcc --version | grep "Cuda compilation tools" | sed 's/.*build \([0-9]\+\).*/\1/')
-    
     log_success "NVCC found (version $nvcc_version)"
-    log_info "Full version: $nvcc_full_version"
-    log_info "CUDA build: $nvcc_cuda_version"
-    
-    # Validate CUDA version compatibility
-    if [[ $(echo "$nvcc_version >= 11.0" | bc -l 2>/dev/null || echo "0") == "1" ]]; then
-        log_success "✅ CUDA version $nvcc_version is compatible with modern frameworks"
-    elif [[ $(echo "$nvcc_version >= 10.0" | bc -l 2>/dev/null || echo "0") == "1" ]]; then
-        log_warning "⚠️  CUDA version $nvcc_version is supported but consider upgrading"
-    else
-        log_error "❌ CUDA version $nvcc_version is outdated for modern development"
-        return 1
-    fi
-    
-    # Check NVCC environment variables
-    if [[ -n "$CUDA_PATH" ]]; then
-        log_info "CUDA_PATH: $CUDA_PATH"
-    else
-        log_warning "CUDA_PATH not set - may cause linking issues"
-    fi
-    
-    # Check for CUDA_HOME
-    if [[ -n "$CUDA_HOME" ]]; then
-        log_info "CUDA_HOME: $CUDA_HOME"
-    else
-        log_info "CUDA_HOME not set (optional)"
-    fi
-    
-    # Verify NVCC can compile simple test
-    if nvcc -V >/dev/null 2>&1; then
-        log_success "✅ NVCC verification test passed"
-    else
-        log_error "❌ NVCC verification test failed"
-        return 1
-    fi
     
     NVCC_AVAILABLE=true
     return 0
 }
 
-# Enhanced OpenCV CUDA detection with build information verification
+# Enhanced OpenCV CUDA detection
 check_opencv_cuda() {
     log_header "OpenCV CUDA Support Detection"
     
-    # Check for system OpenCV
-    local system_opencv_available=false
-    if pkg-config --exists opencv4; then
-        local system_opencv_version=$(pkg-config --modversion opencv4)
-        log_info "System OpenCV version: $system_opencv_version"
-        system_opencv_available=true
-    else
-        log_info "System OpenCV4 not found in PKG_CONFIG_PATH"
-    fi
-    
-    # Check multiple Python environments for CUDA-enabled OpenCV
+    # Check multiple Python environments
     local cuda_opencv_found=false
-    local cuda_opencv_env=""
-    local cuda_opencv_version=""
     
     for python_exe in "python3" "python"; do
-        # Check current Python environment
         local cuda_result=$($python_exe -c "
 try:
     import cv2
     if hasattr(cv2, 'cuda'):
         if hasattr(cv2.cuda, 'getCudaEnabledDeviceCount'):
             cuda_count = cv2.cuda.getCudaEnabledDeviceCount()
-            print(f'CURRENT_PYTHON_CUDA:{cuda_count}:{cv2.__version__}:{cv2.__file__}')
+            print(f'CUDA:{cuda_count}:{cv2.__version__}')
         else:
-            print('CURRENT_PYTHON_CUDA:0:no_getCudaEnabledDeviceCount:unknown')
+            print('CUDA:0:no_getCudaEnabledDeviceCount')
     else:
-        print('CURRENT_PYTHON_CUDA:0:no_cuda_module:unknown')
+        print('CUDA:0:no_cuda_module')
 except Exception as e:
-    print(f'CURRENT_PYTHON_CUDA:0:ERROR:{str(e)}')
+    print(f'CUDA:0:ERROR:{str(e)}')
 " 2>/dev/null)
         
         if [[ -n "$cuda_result" ]]; then
             local cuda_count=$(echo "$cuda_result" | cut -d':' -f2)
             local opencv_version=$(echo "$cuda_result" | cut -d':' -f3)
-            local opencv_path=$(echo "$cuda_result" | cut -d':' -f4)
             
             if [[ "$cuda_count" != "0" ]]; then
                 log_success "✅ CUDA-enabled OpenCV found in $python_exe environment!"
                 log_info "OpenCV version: $opencv_version"
                 log_info "CUDA devices: $cuda_count"
-                log_info "Path: $opencv_path"
                 cuda_opencv_found=true
-                cuda_opencv_version="$opencv_version"
                 break
             fi
         fi
     done
-    
-    # Also check common Conda environments
-    if [[ "$cuda_opencv_found" == "false" ]]; then
-        for conda_env in opencv_cuda12 opencv_env py39 py310 py311 py312; do
-            if [[ -f "$HOME/miniconda3/envs/$conda_env/bin/python" ]]; then
-                local conda_cuda_result=$($HOME/miniconda3/envs/$conda_env/bin/python -c "
-try:
-    import cv2
-    if hasattr(cv2, 'cuda'):
-        if hasattr(cv2.cuda, 'getCudaEnabledDeviceCount'):
-            cuda_count = cv2.cuda.getCudaEnabledDeviceCount()
-            print(f'CONDA_CUDA:{cuda_count}:{cv2.__version__}:{cv2.__file__}')
-        else:
-            print('CONDA_CUDA:0:no_getCudaEnabledDeviceCount:unknown')
-    else:
-        print('CONDA_CUDA:0:no_cuda_module:unknown')
-except Exception as e:
-    print(f'CONDA_CUDA:0:ERROR:{str(e)}')
-" 2>/dev/null)
-                
-                if [[ -n "$conda_cuda_result" ]]; then
-                    local cuda_count=$(echo "$conda_cuda_result" | cut -d':' -f2)
-                    local opencv_version=$(echo "$conda_cuda_result" | cut -d':' -f3)
-                    local opencv_path=$(echo "$conda_cuda_result" | cut -d':' -f4)
-                    
-                    if [[ "$cuda_count" != "0" ]]; then
-                        log_success "✅ CUDA-enabled OpenCV found in Conda environment: $conda_env!"
-                        log_info "OpenCV version: $opencv_version"
-                        log_info "CUDA devices: $cuda_count"
-                        log_info "Path: $opencv_path"
-                        cuda_opencv_found=true
-                        cuda_opencv_env="$conda_env"
-                        cuda_opencv_version="$opencv_version"
-                        break
-                    fi
-                fi
-            fi
-        done
-    fi
     
     if [[ "$cuda_opencv_found" == "true" ]]; then
         log_success "🎉 OpenCV CUDA support is available!"
         OPENCV_CUDA_SUPPORT=true
-        
-        if [[ -n "$cuda_opencv_env" ]]; then
-            log_info "To use CUDA-enabled OpenCV, run:"
-            echo "  source ~/miniconda3/bin/activate $cuda_opencv_env"
-        fi
     else
-        log_error "❌ OpenCV CUDA support not available in any Python environment"
-        log_info "Available options:"
-        
-        if [[ "$system_opencv_available" == "true" ]]; then
-            echo "  • System OpenCV $system_opencv_version (CPU only)"
-        fi
-        
-        echo "  • Install CUDA-enabled OpenCV in Conda:"
-        echo "    conda create -n opencv_cuda12 python=3.12 opencv cudatoolkit=12.1"
-        echo "    conda activate opencv_cuda12"
-        echo ""
-        echo "  • Or install CUDA-enabled OpenCV with pip:"
-        echo "    pip install opencv-contrib-python"
-        echo ""
-        
-        # Still set OpenCV_CUDA_SUPPORT to false but don't fail
-        log_info "Build will continue with CPU-only OpenCV support"
+        log_error "❌ OpenCV CUDA support not available"
+        log_info "Install CUDA-enabled OpenCV:"
+        echo "  conda create -n opencv_cuda12 python=3.11 opencv cudatoolkit=12.1"
+        echo "  conda activate opencv_cuda12"
     fi
     
     return 0
 }
 
-# Enhanced Python OpenCV environment check with Conda support and auto-fix
-check_python_opencv_shadowing() {
-    log_header "Python OpenCV Environment Check"
-    
-    if ! command -v python3 >/dev/null 2>&1; then
-        log_warning "Python3 not found"
-        return 0
-    fi
-    
-    # Check for Conda environment
-    if [[ -n "$CONDA_DEFAULT_ENV" ]]; then
-        log_info "Conda environment: $CONDA_DEFAULT_ENV"
-    fi
-    
-    # Check for common Conda locations
-    local conda_python_path=""
-    local conda_opencv_path=""
-    
-    # Try to find OpenCV in common Conda locations
-    for conda_env in opencv_cuda12 opencv_env py39 py310 py311 py312; do
-        if [[ -f "$HOME/miniconda3/envs/$conda_env/bin/python" ]]; then
-            local test_opencv=$(HOME/miniconda3/envs/$conda_env/bin/python -c "import cv2; print('found')" 2>/dev/null || echo "notfound")
-            if [[ "$test_opencv" == "found" ]]; then
-                local opencv_version=$(HOME/miniconda3/envs/$conda_env/bin/python -c "import cv2; print(cv2.__version__)" 2>/dev/null || echo "unknown")
-                local opencv_file=$(HOME/miniconda3/envs/$conda_env/bin/python -c "import cv2; print(cv2.__file__)" 2>/dev/null || echo "unknown")
-                local cuda_devices=$(HOME/miniconda3/envs/$conda_env/bin/python -c "import cv2; print(cv2.cuda.getCudaEnabledDeviceCount())" 2>/dev/null || echo "0")
-                
-                if [[ "$cuda_devices" != "0" ]] && [[ "$cuda_devices" != "AttributeError" ]]; then
-                    log_success "✅ CUDA-enabled OpenCV found in Conda environment: $conda_env"
-                    log_info "OpenCV version: $opencv_version"
-                    log_info "CUDA devices: $cuda_devices"
-                    log_info "Path: $opencv_file"
-                    
-                    # Check if current Python is using this environment
-                    local current_opencv=$(python3 -c "import cv2; print(cv2.__file__)" 2>/dev/null || echo "notfound")
-                    if [[ "$current_opencv" == "notfound" ]] || [[ "$current_opencv" != *"conda"* ]]; then
-                        log_info "Current Python not using Conda OpenCV - this is normal"
-                        log_info "To use CUDA-enabled OpenCV, activate Conda environment:"
-                        echo "  source ~/miniconda3/bin/activate $conda_env"
-                    fi
-                fi
-            fi
-        fi
-    done
-    
-    # Get current Python OpenCV info
-    local python_opencv_path=$(python3 -c "import cv2; print(cv2.__file__)" 2>/dev/null || echo "")
-    local python_opencv_version=$(python3 -c "import cv2; print(cv2.__version__)" 2>/dev/null || echo "Not found")
-    
-    # Get system OpenCV info
-    local system_opencv_version=$(pkg-config --modversion opencv4 2>/dev/null || echo "Not found")
-    
-    log_info "Current Python OpenCV path: $python_opencv_path"
-    log_info "Current Python OpenCV version: $python_opencv_version"
-    log_info "System OpenCV version: $system_opencv_version"
-    
-    # Check if we have OpenCV available at all
-    if [[ -z "$python_opencv_path" ]]; then
-        log_warning "⚠️  OpenCV not found in current Python environment"
-        log_info "Available Python OpenCV environments:"
-        echo "  • Current (system): Not available"
-        
-        # Check for Conda environments with OpenCV
-        local conda_found=false
-        for conda_env in opencv_cuda12 opencv_env py39 py310 py311 py312; do
-            if [[ -f "$HOME/miniconda3/envs/$conda_env/bin/python" ]]; then
-                local test_opencv=$(HOME/miniconda3/envs/$conda_env/bin/python -c "import cv2; print('found')" 2>/dev/null || echo "notfound")
-                if [[ "$test_opencv" == "found" ]]; then
-                    local opencv_version=$(HOME/miniconda3/envs/$conda_env/bin/python -c "import cv2; print(cv2.__version__)" 2>/dev/null || echo "unknown")
-                    local cuda_devices=$(HOME/miniconda3/envs/$conda_env/bin/python -c "import cv2; print(cv2.cuda.getCudaEnabledDeviceCount())" 2>/dev/null || echo "0")
-                    local cuda_status=$(if [[ "$cuda_devices" != "0" ]] && [[ "$cuda_devices" != "AttributeError" ]]; then echo "✅"; else echo "❌"; fi)
-                    echo "  • Conda ($conda_env): $opencv_version $cuda_status"
-                    conda_found=true
-                fi
-            fi
-        done
-        
-        if [[ "$conda_found" == "true" ]]; then
-            log_info "To use OpenCV with CUDA, activate a Conda environment:"
-            echo "  source ~/miniconda3/bin/activate opencv_cuda12"
-            echo "  # Then run this build script again"
-        else
-            log_error "❌ No OpenCV found in any Python environment"
-            log_info "Install OpenCV:"
-            echo "  pip install opencv-contrib-python"
-            echo "  # Or for CUDA support:"
-            echo "  conda create -n opencv_cuda12 python=3.12 opencv cudatoolkit=12.1"
-            echo "  conda activate opencv_cuda12"
-            return 1
-        fi
-    else
-        log_success "✅ OpenCV found in current Python environment"
-    fi
-    
-    # Check for shadowing issues only if we have both system and Python OpenCV
-    if [[ "$python_opencv_path" == *"site-packages"* ]] && [[ "$system_opencv_version" != "Not found" ]]; then
-        if [[ "$python_opencv_version" != "$system_opencv_version" ]]; then
-            log_warning "⚠️  OpenCV version mismatch detected!"
-            log_warning "System OpenCV ($system_opencv_version) vs Python OpenCV ($python_opencv_version)"
-            log_info "This can cause module shadowing and potential runtime issues."
-            
-            # Check if this is a Conda installation (usually OK)
-            if [[ "$python_opencv_path" == *"conda"* ]] || [[ "$python_opencv_path" == *"$HOME/miniconda3"* ]]; then
-                log_info "Python OpenCV appears to be from Conda (OK for development)"
-                log_info "System OpenCV is available for system tools if needed"
-            else
-                log_warning "This may cause conflicts between system tools and Python scripts"
-                
-                PYTHON_OPENCV_ISSUES=true
-                return 1
-            fi
-        else
-            log_success "✅ OpenCV versions match between system and Python"
-        fi
-    elif [[ "$python_opencv_path" == *"site-packages"* ]] && [[ "$system_opencv_version" == "Not found" ]]; then
-        log_info "✅ Only Python OpenCV found - system OpenCV not available (this is fine)"
-    else
-        log_success "✅ OpenCV environment looks good"
-    fi
-    
-    return 0
-}
-
-# Enhanced CUDA environment setup with automatic detection and configuration
+# Setup CUDA environment
 setup_cuda_environment() {
     log_header "CUDA Environment Setup"
     
-    # Try to source existing setup script if it exists
-    if [[ -f "./setup_cuda_env.sh" ]]; then
-        log_info "Sourcing existing CUDA environment setup script..."
-        source ./setup_cuda_env.sh
-        if [[ $? -eq 0 ]]; then
-            log_success "✅ CUDA environment setup script executed successfully"
-        else
-            log_warning "⚠️  CUDA environment setup script had issues, continuing with manual setup"
-        fi
-    fi
-    
-    # Manual CUDA environment setup as fallback
-    local cuda_root=""
-    local cuda_found=false
-    
-    # Check for CUDA 12.8 first (most likely location)
+    # Check for CUDA 12.8 first and ensure it's used
     if [[ -d "/usr/local/cuda-12.8" ]]; then
-        cuda_root="/usr/local/cuda-12.8"
-        cuda_found=true
-        log_success "✅ Found CUDA 12.8 at: $cuda_root"
-    elif [[ -d "/usr/local/cuda" ]]; then
-        cuda_root="/usr/local/cuda"
-        cuda_found=true
-        log_success "✅ Found CUDA at: $cuda_root"
+        export CUDA_PATH="/usr/local/cuda-12.8"
+        export CUDA_HOME="/usr/local/cuda-12.8"
+        export CUDA_ROOT="$CUDA_PATH"
+        log_success "✅ Found CUDA 12.8"
     else
-        # Search for other CUDA installations
-        for cuda_dir in /usr/local/cuda-*; do
-            if [[ -d "$cuda_dir" && -f "$cuda_dir/include/cuda_runtime.h" ]]; then
-                cuda_root="$cuda_dir"
-                cuda_found=true
-                log_success "✅ Found CUDA at: $cuda_root"
-                break
-            fi
-        done
-    fi
-    
-    if [[ "$cuda_found" == "true" ]]; then
-        # Set CUDA environment variables
-        export CUDA_PATH="$cuda_root"
-        export CUDA_HOME="$cuda_root"
-        export CUDA_ROOT="$cuda_root"
-        
-        # Update PATH and LD_LIBRARY_PATH
-        export PATH="$cuda_root/bin:$PATH"
-        export LD_LIBRARY_PATH="$cuda_root/lib64:$LD_LIBRARY_PATH"
-        
-        # Verify CUDA headers are accessible
-        if [[ -f "$cuda_root/include/cuda_runtime.h" ]]; then
-            log_success "✅ CUDA headers found at: $cuda_root/include/cuda_runtime.h"
-        else
-            log_error "❌ CUDA headers not found at: $cuda_root/include/cuda_runtime.h"
-            return 1
-        fi
-        
-        # Verify CUDA libraries are accessible
-        if [[ -f "$cuda_root/lib64/libcudart.so" ]]; then
-            log_success "✅ CUDA libraries found at: $cuda_root/lib64/"
-        else
-            log_error "❌ CUDA libraries not found at: $cuda_root/lib64/"
-            return 1
-        fi
-        
-        # Update nvcc availability check after setting environment
-        if command -v nvcc >/dev/null 2>&1; then
-            local nvcc_version=$(nvcc --version | grep "release" | sed 's/.*release \([0-9]\+\.[0-9]\+\).*/\1/')
-            log_success "✅ NVCC available with CUDA version $nvcc_version"
-            NVCC_AVAILABLE=true
-        else
-            log_warning "⚠️  NVCC not found after setting CUDA environment"
-        fi
-        
-        # Create CMake CUDA variables for better integration
-        export CUDA_TOOLKIT_ROOT_DIR="$cuda_root"
-        export CMAKE_CUDA_COMPILER="$cuda_root/bin/nvcc"
-        
-        log_info "CUDA Environment Variables Set:"
-        log_info "  CUDA_PATH: $CUDA_PATH"
-        log_info "  CUDA_HOME: $CUDA_HOME"
-        log_info "  CUDA_ROOT: $CUDA_ROOT"
-        log_info "  CUDA_TOOLKIT_ROOT_DIR: $CUDA_TOOLKIT_ROOT_DIR"
-        log_info "  CMAKE_CUDA_COMPILER: $CMAKE_CUDA_COMPILER"
-        
-        return 0
-    else
-        log_error "❌ No suitable CUDA installation found"
-        log_info "Expected locations:"
-        echo "  • /usr/local/cuda-12.8"
-        echo "  • /usr/local/cuda"
-        echo "  • /usr/local/cuda-*"
+        log_error "CUDA 12.8 not found at /usr/local/cuda-12.8"
         return 1
     fi
+    
+    if [[ -n "$CUDA_PATH" ]]; then
+        # Set explicit CUDA environment variables
+        export PATH="$CUDA_PATH/bin:$PATH"
+        export LD_LIBRARY_PATH="$CUDA_PATH/lib64:$LD_LIBRARY_PATH"
+        export CUDA_PATH="$CUDA_PATH"
+        export CUDA_HOME="$CUDA_PATH"
+        export CUDA_ROOT="$CUDA_PATH"
+        
+        # Disable old CUDA toolkit to prevent conflicts
+        export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v "/usr/lib/nvidia-cuda-toolkit/bin" | tr '\n' ':' | sed 's/:$//')
+        export LD_LIBRARY_PATH=$(echo "$LD_LIBRARY_PATH" | tr ':' '\n' | grep -v "/usr/lib/nvidia-cuda-toolkit" | tr '\n' ':' | sed 's/:$//')
+        
+        # Verify CUDA 12.8 NVCC is accessible
+        if [[ -x "$CUDA_PATH/bin/nvcc" ]]; then
+            local nvcc_version=$($CUDA_PATH/bin/nvcc --version | grep "release" | sed 's/.*release \([0-9]\+\.[0-9]\+\).*/\1/')
+            log_success "✅ NVCC version: $nvcc_version"
+        else
+            log_error "❌ NVCC not found at $CUDA_PATH/bin/nvcc"
+            return 1
+        fi
+        
+        log_info "CUDA environment configured to use: $CUDA_PATH"
+        log_info "PATH contains: $(echo $PATH | tr ':' '\n' | grep cuda)"
+    fi
+    
+    return 0
 }
 
 # Main build function
@@ -622,27 +261,42 @@ main() {
     log_header "Background Remover Lite - Enhanced Build Script"
     
     # Check if we're in a Conda environment
-    local in_conda=false
     if [[ -n "$CONDA_DEFAULT_ENV" ]]; then
-        in_conda=true
         log_info "Running in Conda environment: $CONDA_DEFAULT_ENV"
     else
         log_info "Running in system environment"
+        
+        # Try to activate CPU-only OpenCV environment if available
+        if [[ -f "$HOME/miniconda3/bin/activate" ]]; then
+            log_info "Attempting to activate CPU-only OpenCV environment..."
+            if [[ -d "$HOME/miniconda3/envs/opencv_cpu" ]]; then
+                log_info "Activating opencv_cpu environment for build compatibility..."
+                source "$HOME/miniconda3/bin/activate" opencv_cpu
+                if [[ "$CONDA_DEFAULT_ENV" == "opencv_cpu" ]]; then
+                    log_success "✅ Successfully activated opencv_cpu environment"
+                fi
+            elif [[ -d "$HOME/miniconda3/envs/opencv_cuda12" ]]; then
+                log_info "Falling back to opencv_cuda12 environment..."
+                source "$HOME/miniconda3/bin/activate" opencv_cuda12
+                if [[ "$CONDA_DEFAULT_ENV" == "opencv_cuda12" ]]; then
+                    log_success "✅ Successfully activated opencv_cuda12 environment"
+                fi
+            fi
+        fi
     fi
     
     # Environment checks
     check_nvidia_environment
-    
-    # Setup CUDA environment before other checks that depend on it
     setup_cuda_environment
-    
-    # Re-check NVCC after CUDA environment setup
     check_nvcc
     check_opencv_cuda
-    check_python_opencv_shadowing
     
-    # Create build directory
+    # Clean build directory to avoid cached CMake configuration
     log_header "Build Configuration"
+    if [[ -d "build" ]]; then
+        log_info "Cleaning existing build directory..."
+        rm -rf build
+    fi
     mkdir -p build
     cd build
     
@@ -657,79 +311,21 @@ main() {
     # Configure CMake
     log_info "Configuring with CMake..."
     
-    # Enhanced CMake flags with proper CUDA path handling
-    CMAKE_FLAGS=""
+    CMAKE_FLAGS="-DU2NET_DOWNLOAD_MODELS=ON"
     
-    # Add CUDA toolkit root directory if available
-    if [[ -n "$CUDA_PATH" && -d "$CUDA_PATH" ]]; then
-        CMAKE_FLAGS="-DCUDA_TOOLKIT_ROOT_DIR=$CUDA_PATH"
-        log_info "CUDA toolkit root: $CUDA_PATH"
-    fi
-    
-    # Add CUDA compiler if available
-    if [[ -n "$CMAKE_CUDA_COMPILER" && -f "$CMAKE_CUDA_COMPILER" ]]; then
-        CMAKE_FLAGS="$CMAKE_FLAGS -DCMAKE_CUDA_COMPILER=$CMAKE_CUDA_COMPILER"
-        log_info "CUDA compiler: $CMAKE_CUDA_COMPILER"
-    fi
-    
-    # Enable CUDA support based on detection
-    if [[ "$OPENCV_CUDA_SUPPORT" == "true" ]] && [[ "$NVCC_AVAILABLE" == "true" ]]; then
-        CMAKE_FLAGS="$CMAKE_FLAGS -DWITH_CUDA=ON"
-        if [[ -n "$CUDA_ARCH_BIN" ]]; then
-            CMAKE_FLAGS="$CMAKE_FLAGS -DCUDA_ARCH_BIN=$CUDA_ARCH_BIN"
-            log_info "CUDA architecture: $CUDA_ARCH_BIN"
-        fi
-        log_success "CUDA support enabled in CMake"
-    else
-        CMAKE_FLAGS="$CMAKE_FLAGS -DWITH_CUDA=OFF"
-        log_warning "CUDA support disabled - building CPU-only version"
-    fi
-    
-    # Add additional CUDA-related flags for better integration
-    if [[ "$NVCC_AVAILABLE" == "true" ]]; then
-        CMAKE_FLAGS="$CMAKE_FLAGS -DENABLE_CUDA=ON"
-        log_info "CUDA compilation enabled"
-    fi
-    
-    # U²-Net model download options
-    log_info "U²-Net model download configuration:"
-    log_info "  Download models: ON (recommended)"
-    log_info "  Cache directory: ~/.cache/u2net"
-    log_info "  Offline mode: OFF (requires models to be pre-cached)"
-    
-    CMAKE_FLAGS="$CMAKE_FLAGS -DU2NET_DOWNLOAD_MODELS=ON"
+    # Temporarily disable CUDA for OpenCV to fix build compatibility
+    log_info "Building with CPU OpenCV for compatibility"
+    CMAKE_FLAGS="$CMAKE_FLAGS -DWITH_CUDA=OFF"
+    log_warning "CUDA support disabled temporarily - GPU acceleration will be handled by ONNX Runtime only"
     
     # Display final CMake configuration
     log_info "CMake configuration command: cmake $CMAKE_FLAGS .."
     
-    # Run CMake with enhanced error handling
+    # Run CMake
     if cmake $CMAKE_FLAGS ..; then
         log_success "CMake configuration successful"
-        
-        # Verify CUDA was properly detected by CMake
-        if [[ -f "CMakeCache.txt" ]]; then
-            if grep -q "CUDA_TOOLKIT_ROOT_DIR:PATH=$CUDA_PATH" CMakeCache.txt 2>/dev/null; then
-                log_success "✅ CMake correctly detected CUDA toolkit at: $CUDA_PATH"
-            else
-                log_warning "⚠️  CMake may not have detected CUDA toolkit path correctly"
-            fi
-            
-            if grep -q "CUDA_FOUND:BOOL=ON" CMakeCache.txt 2>/dev/null; then
-                log_success "✅ CMake detected CUDA support"
-            else
-                log_warning "⚠️  CMake did not enable CUDA support"
-            fi
-        fi
     else
         log_error "CMake configuration failed"
-        log_info "Troubleshooting steps:"
-        echo "  1. Ensure all dependencies are installed"
-        echo "  2. Check CUDA toolkit installation: $CUDA_PATH"
-        echo "  3. Verify CUDA headers: $CUDA_PATH/include/cuda_runtime.h"
-        echo "  4. Verify CUDA libraries: $CUDA_PATH/lib64/"
-        echo "  5. Check OpenCV CUDA support"
-        echo "  6. Review CMake output above for specific errors"
-        echo "  7. Try: rm -rf build && ./build.sh"
         exit 1
     fi
     
@@ -739,10 +335,6 @@ main() {
         log_success "Build successful"
     else
         log_error "Build failed"
-        log_info "Common build issues and solutions:"
-        echo "  • Missing OpenCV: sudo apt install libopencv-dev"
-        echo "  • CUDA issues: Re-run with --cuda-only or --cpu-only"
-        echo "  • CMake cache: rm -rf build && ./build.sh"
         exit 1
     fi
     
@@ -752,11 +344,9 @@ main() {
     echo "Available executables:"
     if [[ -f "./bgremover" ]]; then
         log_success "  📱 CPU Version: ./bgremover"
-        echo "     Usage: ./bgremover or ./bgremover <video_file>"
     fi
     if [[ -f "./bgremover_gpu" ]]; then
         log_success "  🚀 GPU Version: ./bgremover_gpu"
-        echo "     Usage: ./bgremover_gpu or ./bgremover_gpu <video_file>"
     fi
     
     if [[ ! -f "./bgremover" ]] && [[ ! -f "./bgremover_gpu" ]]; then
@@ -764,105 +354,29 @@ main() {
         exit 1
     fi
     
-    echo ""
-    echo "Optional: Copy executables to the root directory:"
-    echo "  cp build/bgremover .           # CPU version"
-    if [[ -f "./bgremover_gpu" ]]; then
-        echo "  cp build/bgremover_gpu .     # GPU version"
-    fi
-    
-    # Set library path for ONNX Runtime
-    if [[ -f "onnxruntime/lib/libonnxruntime.so" ]]; then
-        export LD_LIBRARY_PATH="$PWD/onnxruntime/lib:$LD_LIBRARY_PATH"
-        log_info "Added ONNX Runtime to LD_LIBRARY_PATH for GPU support"
-    fi
-    
-    # Final status with comprehensive summary
+    # Final status
     log_header "Environment Summary"
     
-    # Create status indicators
     local cuda_status=$(if [[ "$CUDA_AVAILABLE" == "true" ]]; then echo "✅"; else echo "❌"; fi)
     local nvcc_status=$(if [[ "$NVCC_AVAILABLE" == "true" ]]; then echo "✅"; else echo "❌"; fi)
     local opencv_cuda_status=$(if [[ "$OPENCV_CUDA_SUPPORT" == "true" ]]; then echo "✅"; else echo "❌"; fi)
-    local python_status=$(if [[ "$PYTHON_OPENCV_ISSUES" == "true" ]]; then echo "⚠️"; else echo "✅"; fi)
     
-    # Print detailed summary
-    echo -e "${WHITE}Driver & Runtime:${NC}"
     echo "  CUDA Available: $cuda_status"
     echo "  NVCC Available: $nvcc_status"
+    echo "  OpenCV CUDA: $opencv_cuda_status"
+    
     if [[ -n "$GPU_NAME" ]]; then
         echo "  GPU: $GPU_NAME"
     fi
-    if [[ -n "$driver_version" ]]; then
-        echo "  Driver: $driver_version"
-    fi
-    
-    echo ""
-    echo -e "${WHITE}Libraries:${NC}"
-    echo "  OpenCV CUDA: $opencv_cuda_status"
-    echo "  Python Issues: $python_status"
     
     # Overall assessment
     echo ""
-    if [[ "$CUDA_AVAILABLE" == "true" ]] && [[ "$OPENCV_CUDA_SUPPORT" == "true" ]] && [[ "$PYTHON_OPENCV_ISSUES" != "true" ]]; then
+    if [[ "$CUDA_AVAILABLE" == "true" ]] && [[ "$OPENCV_CUDA_SUPPORT" == "true" ]]; then
         log_success "🎉 All systems ready for GPU-accelerated background blur!"
-        echo ""
-        echo -e "${GREEN}✅ Environment is fully optimized for GPU acceleration${NC}"
-        echo -e "${GREEN}✅ All CUDA and OpenCV components are properly configured${NC}"
-        echo -e "${GREEN}✅ No Python environment conflicts detected${NC}"
-    elif [[ "$CUDA_AVAILABLE" == "true" ]] && [[ "$OPENCV_CUDA_SUPPORT" == "true" ]]; then
-        log_warning "⚠️  GPU acceleration available but there are Python environment issues"
-        echo ""
-        echo -e "${YELLOW}⚠️  CUDA and OpenCV are properly configured${NC}"
-        echo -e "${YELLOW}⚠️  Python environment needs attention (see above)${NC}"
     elif [[ "$CUDA_AVAILABLE" == "true" ]]; then
         log_warning "⚠️  CUDA available but OpenCV CUDA support missing"
-        echo ""
-        echo -e "${YELLOW}⚠️  GPU and drivers are properly installed${NC}"
-        echo -e "${YELLOW}⚠️  OpenCV needs CUDA support (see OpenCV section above)${NC}"
     else
         log_error "❌ Running in CPU-only mode"
-        echo ""
-        echo -e "${RED}❌ GPU acceleration is not available${NC}"
-        echo -e "${RED}❌ The application will run on CPU only${NC}"
-    fi
-    
-    # Provide next steps
-    echo ""
-    if [[ "$CUDA_AVAILABLE" != "true" ]] || [[ "$OPENCV_CUDA_SUPPORT" != "true" ]]; then
-        echo -e "${BOLD}Next steps for GPU acceleration:${NC}"
-        echo "  1. Install NVIDIA drivers: https://www.nvidia.com/drivers"
-        echo "  2. Install CUDA Toolkit: https://developer.nvidia.com/cuda-downloads"
-        
-        if [[ "$in_conda" == "true" ]]; then
-            echo "  3. Install CUDA-enabled OpenCV in Conda:"
-            echo "     conda install opencv cudatoolkit=12.1"
-        else
-            echo "  3. Install CUDA-enabled OpenCV:"
-            echo "     conda create -n opencv_cuda python=3.12 opencv cudatoolkit=12.1"
-            echo "     conda activate opencv_cuda"
-        fi
-        
-        echo "  4. Re-run this build script"
-    fi
-    
-    # Performance recommendations
-    echo ""
-    if [[ "$CUDA_AVAILABLE" == "true" ]] && [[ "$OPENCV_CUDA_SUPPORT" == "true" ]]; then
-        echo -e "${BOLD}Performance Tips:${NC}"
-        echo "  • Use GPU version: ./bgremover_gpu"
-        echo "  • Monitor GPU utilization during processing"
-        echo "  • Consider adjusting blur strength for optimal performance"
-        echo "  • Ensure adequate system RAM and GPU memory"
-    fi
-    
-    # Additional recommendations for mixed environments
-    if [[ "$in_conda" == "true" ]] && [[ "$OPENCV_CUDA_SUPPORT" == "true" ]]; then
-        echo ""
-        echo -e "${BOLD}CUDA Environment Setup:${NC}"
-        echo "  • Your Conda environment is ready for CUDA development"
-        echo "  • Always activate this environment when using OpenCV CUDA"
-        echo "  • Consider setting up other tools (PyTorch, ONNX Runtime) with CUDA"
     fi
 }
 

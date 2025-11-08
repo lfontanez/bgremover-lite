@@ -244,7 +244,7 @@ private:
                 
                 // Calculate Y0
                 float Y0 = wr * R0 + wg * G0 + wb * B0;
-                Y0 = std::clamp(Y0, 0.0f, 1.0f);
+                Y0 = std::max(0.0f, std::min(Y0, 1.0f));  // Manual clamp for C++14
                 uchar y0_value = static_cast<uchar>(Y0 * 255.0f);
                 
                 // Process second pixel if available
@@ -257,7 +257,7 @@ private:
                     
                     // Calculate Y1
                     float Y1 = wr * R1 + wg * G1 + wb * B1;
-                    Y1 = std::clamp(Y1, 0.0f, 1.0f);
+                    Y1 = std::max(0.0f, std::min(Y1, 1.0f));  // Manual clamp for C++14
                     y1_value = static_cast<uchar>(Y1 * 255.0f);
                 }
                 
@@ -265,8 +265,8 @@ private:
                 float U = (B0 - Y0) * u_max;
                 float V = (R0 - Y0) * v_max;
                 
-                U = std::clamp(U, -0.436f, 0.436f);
-                V = std::clamp(V, -0.615f, 0.615f);
+                U = std::max(-0.436f, std::min(U, 0.436f));  // Manual clamp for C++14
+                V = std::max(-0.615f, std::min(V, 0.615f));  // Manual clamp for C++14
                 
                 uchar u_value = static_cast<uchar>((U + 0.436f) * 255.0f / (2 * 0.436f));
                 uchar v_value = static_cast<uchar>((V + 0.615f) * 255.0f / (2 * 0.615f));

@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
-# Suppress FindCUDA deprecation warnings
+# Suppress FindCUDA deprecation warnings - set before project() call
+cmake_minimum_required(VERSION 3.16)
 if(POLICY CMP0146)
     cmake_policy(SET CMP0146 NEW)
 endif()
@@ -103,7 +104,10 @@ if(U2NET_DOWNLOAD_MODELS)
         add_definitions(-DU2NET_MODEL_PATH="${U2NET_MODEL_PATH}")
         message(STATUS "✅ U²-Net model path: ${U2NET_MODEL_PATH}")
     else()
-        message(WARNING "⚠️  U²-Net model path not found after download")
+        # Fallback to cache directory if function fails
+        set(U2NET_MODEL_PATH "${U2NET_MODEL_CACHE_DIR}/u2net.onnx")
+        add_definitions(-DU2NET_MODEL_PATH="${U2NET_MODEL_PATH}")
+        message(WARNING "⚠️  U²-Net model path not found by function, using fallback: ${U2NET_MODEL_PATH}")
     endif()
     
     u2net_get_model_path("u2netp" U2NETP_MODEL_PATH)
@@ -111,7 +115,10 @@ if(U2NET_DOWNLOAD_MODELS)
         add_definitions(-DU2NETP_MODEL_PATH="${U2NETP_MODEL_PATH}")
         message(STATUS "✅ U²-Net Portrait model path: ${U2NETP_MODEL_PATH}")
     else()
-        message(WARNING "⚠️  U²-Net Portrait model path not found after download")
+        # Fallback to cache directory if function fails
+        set(U2NETP_MODEL_PATH "${U2NET_MODEL_CACHE_DIR}/u2netp.onnx")
+        add_definitions(-DU2NETP_MODEL_PATH="${U2NETP_MODEL_PATH}")
+        message(WARNING "⚠️  U²-Net Portrait model path not found by function, using fallback: ${U2NETP_MODEL_PATH}")
     endif()
     
     # Final model availability check
@@ -348,7 +355,13 @@ if(U2NET_DOWNLOAD_MODELS)
     if(models_available)
         message(STATUS "🎯 Model Status: ALL AVAILABLE")
     else()
-        message(STATUS "⚠️  Model Status: SOME MISSING")
+        # Manual check as fallback
+        if(EXISTS "${U2NET_MODEL_PATH}" AND EXISTS "${U2NETP_MODEL_PATH}")
+            set(models_available TRUE)
+            message(STATUS "🎯 Model Status: ALL AVAILABLE (verified manually)")
+        else()
+            message(STATUS "⚠️  Model Status: SOME MISSING")
+        endif()
     endif()
 else()
     message(STATUS "📦 Model Download: DISABLED (Manual placement)")
@@ -356,9 +369,9 @@ else()
     
     # Check manual placement with detailed status
     set(MANUAL_CHECK_RESULTS "")
-    # Enhanced model status checking with comprehensive symlink handling
-    set(MANUAL_CHECK_RESULTS "")
+    set(MANUAL_MODELS_FOUND TRUE)
     
+    # Enhanced model status checking with comprehensive symlink handling
     macro(ADD_MODEL_STATUS model_path model_name is_required)
         set(found_status "NOT_FOUND")
         set(status_icon "❌")
@@ -415,6 +428,7 @@ else()
                 if(is_required)
                     set(found_status "MISSING_REQUIRED")
                     set(status_icon "❌")
+                    set(MANUAL_MODELS_FOUND FALSE)
                 else()
                     set(found_status "MISSING_OPTIONAL")
                     set(status_icon "⚠️")
@@ -433,6 +447,13 @@ else()
     ADD_MODEL_STATUS("${CMAKE_SOURCE_DIR}/models/u2netp.onnx" "u2netp.onnx" FALSE)
     
     message(STATUS "Manual Model Status:\n${MANUAL_CHECK_RESULTS}")
+    
+    # Set final model availability status
+    if(MANUAL_MODELS_FOUND)
+        message(STATUS "🎯 All required models found via manual placement!")
+    else()
+        message(WARNING "⚠️  Some required models are missing - build may fail at runtime")
+    endif()
 endif()
 message(STATUS "====================================")
 
@@ -445,9 +466,10 @@ endif()
 # Build Configuration
 # ==================================================================================
 
-# ==== C++ standard ====
-set(CMAKE_CXX_STANDARD 17)
+# ==== C++ standard (C++14 for maximum compatibility) ====
+set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 # ==================================================================================
 # Model Configuration Summary
@@ -472,7 +494,13 @@ if(U2NET_DOWNLOAD_MODELS)
     if(models_available)
         message(STATUS "✅ All models available for building")
     else()
-        message(WARNING "⚠️  Some models are missing - build may fail")
+        # Manual verification as fallback
+        if(EXISTS "${U2NET_MODEL_PATH}" AND EXISTS "${U2NETP_MODEL_PATH}")
+            set(models_available TRUE)
+            message(STATUS "✅ All models available for building (verified manually)")
+        else()
+            message(WARNING "⚠️  Some models are missing - build may fail")
+        endif()
     endif()
     
     message(STATUS "=====================================")
@@ -493,7 +521,17 @@ else()
     endif()
 endif()
 
-# ==== Find OpenCV with CUDA support ====
+# ==== Find OpenCV (disable CUDA dependency) ====
+# Completely disable CUDA for OpenCV to avoid package conflicts
+set(CMAKE_DISABLE_FIND_PACKAGE_CUDA TRUE)
+
+# Set environment to prevent CUDA lookups
+if(DEFINED CUDA_PATH)
+    set(ENV{CUDA_DIR} "")
+    set(ENV{CUDA_PATH} "")
+endif()
+
+# Find OpenCV without CUDA
 find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui dnn)
 message(STATUS "Found OpenCV version: ${OpenCV_VERSION}")
 message(STATUS "OpenCV include dirs: ${OpenCV_INCLUDE_DIRS}")
@@ -533,27 +571,47 @@ if(CAIRO_FOUND)
     message(STATUS "✅ Cairo found: ${CAIRO_INCLUDE_DIRS}")
 endif()
 
-# ==== Detect CUDA Automatically ====
-find_package(CUDAToolkit QUIET)
+# ==== Enhanced CUDA Detection with 12.8 Priority ====
+# Disable old CUDA toolkit detection to avoid conflicts
+set(CMAKE_DISABLE_FIND_PACKAGE_CUDA_TOOLKIT TRUE)
 
-if(CUDAToolkit_FOUND)
-    set(CUDA_AVAILABLE TRUE)
-    message(STATUS "✅ CUDA detected: ${CUDAToolkit_VERSION}")
+# Explicitly set CUDA 12.8 paths
+if(EXISTS "/usr/local/cuda-12.8")
+    set(CUDA_TOOLKIT_ROOT_DIR "/usr/local/cuda-12.8")
+    set(CUDA_PATH "/usr/local/cuda-12.8")
+    set(CUDA_HOME "/usr/local/cuda-12.8")
+    set(CUDA_NVCC_EXECUTABLE "${CUDA_TOOLKIT_ROOT_DIR}/bin/nvcc")
+    set(CUDA_TOOLKIT_INCLUDE_DIRS "${CUDA_TOOLKIT_ROOT_DIR}/include")
+    set(CUDA_CUDART_LIBRARY "${CUDA_TOOLKIT_ROOT_DIR}/lib64/libcudart.so")
     
-    # Check for CUDA runtime library
-    find_library(CUDA_RUNTIME_LIBRARY
-        NAMES cudart
-        HINTS ${CUDAToolkit_LIBRARY_DIRS} ${CUDA_TOOLKIT_ROOT_DIR}/lib64
-    )
-    if(CUDA_RUNTIME_LIBRARY)
+    # Check CUDA 12.8 compiler and headers
+    if(EXISTS "${CUDA_NVCC_EXECUTABLE}" AND EXISTS "${CUDA_TOOLKIT_INCLUDE_DIRS}/cuda_runtime.h")
+        set(CUDA_AVAILABLE TRUE)
+        set(CUDA_VERSION "12.8")
+        message(STATUS "✅ CUDA 12.8 detected: ${CUDA_TOOLKIT_ROOT_DIR}")
+        message(STATUS "✅ CUDA NVCC: ${CUDA_NVCC_EXECUTABLE}")
+        message(STATUS "✅ CUDA headers: ${CUDA_TOOLKIT_INCLUDE_DIRS}")
+    else()
+        set(CUDA_AVAILABLE FALSE)
+        message(WARNING "⚠️ CUDA 12.8 incomplete - missing NVCC or headers")
+    endif()
+else()
+    set(CUDA_AVAILABLE FALSE)
+    message(WARNING "⚠️ CUDA 12.8 not found at /usr/local/cuda-12.8")
+endif()
+
+# Set CUDA runtime library path
+if(CUDA_AVAILABLE)
+    set(CUDA_RUNTIME_LIBRARY "${CUDA_CUDART_LIBRARY}")
+    if(EXISTS "${CUDA_RUNTIME_LIBRARY}")
         message(STATUS "✅ CUDA runtime library found: ${CUDA_RUNTIME_LIBRARY}")
     else()
-        message(WARNING "⚠️ CUDA runtime library not found")
+        message(WARNING "⚠️ CUDA runtime library not found at ${CUDA_RUNTIME_LIBRARY}")
         set(CUDA_AVAILABLE FALSE)
     endif()
 else()
     set(CUDA_AVAILABLE FALSE)
-    message(WARNING "⚠️ CUDA not detected — building CPU-only version")
+    message(WARNING "⚠️ CUDA not properly configured — building CPU-only version")
 endif()
 
 # ==== ONNX Runtime download ====
@@ -673,23 +731,29 @@ if(U2NET_MODEL_PATH)
     )
 endif()
 
-# GPU version — only if CUDA available
+# GPU version — only if CUDA 12.8 available
 if(CUDA_AVAILABLE)
+    # Explicitly set CUDA compiler and include paths
+    set(CMAKE_CUDA_COMPILER "${CUDA_NVCC_EXECUTABLE}")
+    set(CMAKE_CUDA_HOST_COMPILER "g++")
+    
+    # Add GPU source files
     add_bgremover_target(bgremover_gpu ${CMAKE_SOURCE_DIR}/main_gpu.cpp)
     target_compile_definitions(bgremover_gpu PRIVATE USE_CUDA=1)
     target_link_libraries(bgremover_gpu PRIVATE 
         ${CUDA_RUNTIME_LIBRARY}
         cudadevrt  # CUDA device runtime
     )
-    # Enable CUDA compilation for this target
-    enable_language(CUDA)
+    # Add CUDA include directories explicitly
+    target_include_directories(bgremover_gpu PRIVATE ${CUDA_TOOLKIT_INCLUDE_DIRS})
+    # Add CUDA compile features for this target only
+    target_compile_features(bgremover_gpu PRIVATE cxx_std_14)
     set_target_properties(bgremover_gpu PROPERTIES
-        CUDA_STANDARD 17
+        CUDA_STANDARD 14
         CUDA_STANDARD_REQUIRED ON
+        CUDA_NVCC_EXECUTABLE "${CUDA_NVCC_EXECUTABLE}"
     )
-    # Add CUDA include directories
-    target_include_directories(bgremover_gpu PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
-    message(STATUS "🚀 Building GPU-accelerated version with CUDA and ONNX Runtime GPU backend")
+    message(STATUS "🚀 Building GPU-accelerated version with CUDA 12.8 and ONNX Runtime GPU backend")
     
     # Ensure U²-Net model is copied to build directory for GPU version
     if(U2NET_MODEL_PATH)
@@ -701,6 +765,7 @@ if(CUDA_AVAILABLE)
     endif()
 else()
     message(STATUS "🧩 Building CPU-only executables")
+    message(STATUS "   GPU acceleration disabled (CUDA 12.8 not available)")
 endif()
 
 # Test utilities
@@ -715,12 +780,14 @@ if(CUDA_AVAILABLE)
         ${CUDA_RUNTIME_LIBRARY}
         cudadevrt
     )
-    target_include_directories(test_gpu PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
-    enable_language(CUDA)
+    target_include_directories(test_gpu PRIVATE ${CUDA_TOOLKIT_INCLUDE_DIRS})
+    target_compile_features(test_gpu PRIVATE cxx_std_14)
     set_target_properties(test_gpu PROPERTIES
-        CUDA_STANDARD 17
+        CUDA_STANDARD 14
         CUDA_STANDARD_REQUIRED ON
+        CUDA_NVCC_EXECUTABLE "${CUDA_NVCC_EXECUTABLE}"
     )
+    message(STATUS "🧪 Building GPU test utilities with CUDA 12.8")
 endif()
 
 # ==== Optional RPATH setup (so ONNX Runtime lib is found at runtime) ====
