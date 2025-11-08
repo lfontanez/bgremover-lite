@@ -2,6 +2,7 @@
 #include <opencv2/opencv.hpp>
 #include <iostream>
 #include <dlfcn.h>
+#include <fstream>
 
 using namespace cv;
 using namespace std;
@@ -113,39 +114,102 @@ int main(int argc, char** argv) {
     opts.SetIntraOpNumThreads(1);
     opts.SetGraphOptimizationLevel(ORT_ENABLE_ALL);
     
-    // Check available providers
-    vector<string> available_providers = Ort::GetAvailableProviders();
-    bool cuda_available = false;
+    // Initialize ONNX Runtime SessionOptions with CUDA support
+    Ort::SessionOptions session_options;
     
-    cout << "Available providers: ";
-    for (const auto& provider : available_providers) {
-        cout << provider << " ";
-        if (provider == "CUDAExecutionProvider") {
-            cuda_available = true;
+    // Check for CUDA provider library
+    string cuda_lib_path = "./onnxruntime/lib/libonnxruntime_providers_shared.so";
+    bool cuda_provider_available = false;
+    
+    // Check if CUDA provider library exists
+    std::ifstream cuda_lib_file(cuda_lib_path);
+    if (cuda_lib_file.good()) {
+        cout << "✅ Found CUDA provider library at: " << cuda_lib_path << endl;
+        cuda_provider_available = true;
+        cuda_lib_file.close();
+        
+        // Try to load the CUDA provider library
+        void* cuda_lib = dlopen("libonnxruntime_providers_shared.so", RTLD_NOW | RTLD_GLOBAL);
+        if (cuda_lib) {
+            cout << "✅ CUDA provider library loaded successfully" << endl;
+            dlclose(cuda_lib);
+        } else {
+            cout << "❌ Failed to load CUDA provider library: " << dlerror() << endl;
+            cuda_provider_available = false;
+        }
+    } else {
+        cout << "❌ CUDA provider library not found at: " << cuda_lib_path << endl;
+    }
+    
+    // Check if CUDA is available in ONNX Runtime
+    bool cuda_available = false;
+    try {
+        auto providers = Ort::GetAvailableProviders();
+        cuda_available = std::find(providers.begin(), providers.end(), "CUDAExecutionProvider") != providers.end();
+        cout << "Available ONNX Runtime providers: ";
+        for (const auto& provider : providers) {
+            cout << provider << " ";
+        }
+        cout << endl;
+        
+        // If CUDA is available and provider library exists, explicitly enable it
+        if (cuda_available && cuda_provider_available) {
+            try {
+                // Add CUDA execution provider to session options
+                Ort::CUDAExecutionProviderOptions cuda_options;
+                cuda_options.device_id = 0;  // Use first GPU device
+                
+                // Enable CUDA provider
+                session_options.AppendExecutionProvider_CUDA(cuda_options);
+                cout << "✅ CUDA execution provider explicitly enabled" << endl;
+                
+                // Disable CPU fallback when CUDA is available
+                session_options.DisableCpuMemArena();
+                session_options.SetInterOpNumThreads(1);
+                session_options.SetIntraOpNumThreads(1);
+                session_options.SetGraphOptimizationLevel(ORT_ENABLE_ALL);
+                
+            } catch (const Ort::Exception& e) {
+                cerr << "❌ Failed to enable CUDA execution provider: " << e.what() << endl;
+                cuda_available = false;
+            } catch (const exception& e) {
+                cerr << "❌ Generic error enabling CUDA provider: " << e.what() << endl;
+                cuda_available = false;
+            }
+        } else if (cuda_available && !cuda_provider_available) {
+            cout << "⚠️  CUDA available but provider library missing - may use fallback" << endl;
+        } else {
+            cout << "❌ CUDA execution provider not available" << endl;
+        }
+    } catch (const exception& e) {
+        cout << "Error checking CUDA availability: " << e.what() << endl;
+        cuda_available = false;
+    }
+    
+    // Create session with proper CUDA support
+    Ort::Session session(env, "models/u2net.onnx", session_options);
+    
+    // Verify CUDA provider is actually being used
+    auto used_providers = session.GetExecutionProviders();
+    bool cuda_used = false;
+    for (const auto& provider : used_providers) {
+        cout << "  Using provider: " << provider << endl;
+        if (provider.find("CUDA") != string::npos) {
+            cuda_used = true;
         }
     }
-    cout << endl;
     
-    // Debug: Check if CUDA execution provider library is available
-    void* cuda_lib = dlopen("libonnxruntime_providers_shared.so", RTLD_NOW | RTLD_GLOBAL);
-    if (cuda_lib) {
-        cout << "✅ CUDA provider library loaded successfully" << endl;
-        dlclose(cuda_lib);
+    if (cuda_used) {
+        cout << "🚀 CUDA execution provider active - GPU acceleration enabled!" << endl;
     } else {
-        cout << "❌ CUDA provider library not found or failed to load" << endl;
-        cout << "   Error: " << dlerror() << endl;
+        cout << "⚠️  CUDA provider not found in active execution providers" << endl;
+        if (cuda_provider_available && cuda_available) {
+            cout << "⚠️  Session created but CUDA provider may not be used - check configuration" << endl;
+        } else {
+            cout << "⚠️  Using CPU fallback (CUDA not available or not configured)" << endl;
+        }
     }
     
-    if (cuda_available) {
-        cout << "🚀 CUDA execution provider detected in environment" << endl;
-        cout << "✅ ONNX Runtime will use GPU acceleration when available" << endl;
-        // Note: CUDA provider will be used automatically if available in the environment
-        // and if ONNX Runtime was built with CUDA support
-    } else {
-        cout << "⚠️  CUDA not available, using optimized CPU fallback" << endl;
-    }
-    
-    Ort::Session session(env, "models/u2net.onnx", opts);
     cout << "Model loaded successfully!\n";
 
     cout << "Press ESC to quit\n";
