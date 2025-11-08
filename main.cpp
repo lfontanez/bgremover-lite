@@ -70,6 +70,14 @@ int main(int argc, char** argv) {
     double fps = cap.get(CAP_PROP_FPS);
     int width = cap.get(CAP_PROP_FRAME_WIDTH);
     int height = cap.get(CAP_PROP_FRAME_HEIGHT);
+    
+    // Performance advisory for high resolutions
+    if (width * height >= 1920 * 1080) {
+        cout << "🔍 High resolution detected (" << width << "x" << height << ") - consider GPU version for optimal performance\n";
+    } else if (width * height >= 1280 * 720) {
+        cout << "📺 HD resolution detected (" << width << "x" << height << ")\n";
+    }
+    
     cout << "Video properties - FPS: " << fps << ", Resolution: " 
          << width << "x" << height << "\n";
 

@@ -307,6 +307,14 @@ int main(int argc, char** argv) {
     double fps = cap.get(CAP_PROP_FPS);
     int width = cap.get(CAP_PROP_FRAME_WIDTH);
     int height = cap.get(CAP_PROP_FRAME_HEIGHT);
+    
+    // Performance advisory for high resolutions
+    if (width * height >= 1920 * 1080) {
+        cout << "🎬 1080p HD processing - GPU acceleration recommended for real-time performance\n";
+    } else if (width * height >= 1280 * 720) {
+        cout << "📺 HD resolution processing (" << width << "x" << height << ")\n";
+    }
+    
     cout << "Video properties - FPS: " << fps << ", Resolution: " 
          << width << "x" << height << "\n";
 
@@ -316,10 +324,17 @@ int main(int argc, char** argv) {
     
     if (vcam_enabled) {
         cout << "Initializing virtual camera at: " << vcam_device << "\n";
+        
+        // Validate high resolution for virtual camera
+        if (width * height >= 1920 * 1080) {
+            cout << "🖥️ High resolution virtual camera: " << width << "x" << height << "\n";
+        }
+        
         vcam_output = std::make_unique<V4L2Output>(vcam_device, width, height);
         if (vcam_output->open()) {
             vcam_opened = true;
-            cout << "✅ Virtual camera enabled: " << vcam_device << "\n";
+            cout << "✅ Virtual camera enabled: " << vcam_device << " (" 
+                 << vcam_output->getSize().width << "x" << vcam_output->getSize().height << ")\n";
         } else {
             cout << "⚠️ Virtual camera failed to open, continuing without it\n";
             vcam_output.reset();

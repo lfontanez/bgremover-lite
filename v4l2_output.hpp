@@ -31,11 +31,11 @@ public:
      * Constructor
      * 
      * @param device_path Path to the V4L2 device (default: "/dev/video2")
-     * @param width Frame width in pixels (default: 640)
-     * @param height Frame height in pixels (default: 480)
+     * @param width Frame width in pixels (default: 1920 for 1080p)
+     * @param height Frame height in pixels (default: 1080 for 1080p)
      */
     V4L2Output(const std::string& device_path = "/dev/video2", 
-               int width = 640, int height = 480)
+               int width = 1920, int height = 1080)
         : device_path_(device_path), fd_(-1), width_(width), height_(height), 
           is_open_(false) {
     }
