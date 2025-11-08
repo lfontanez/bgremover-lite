@@ -125,4 +125,6 @@ docs/_build/
 docs/build/
 
 # Aider files
-.aider*
+.aider*-e 
+# CUDA installer packages (large files)
+*.deb
