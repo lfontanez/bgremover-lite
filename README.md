@@ -351,14 +351,23 @@ Postprocessing (CPU) → Gaussian Blur (CPU) → Blending (CPU) → Display
 ### Check 1080p HD GPU Acceleration
 
 ```bash
-# Verify CUDA environment for 1080p
+# Quick verification of CUDA environment
 python3 verify_opencv_cuda.py
+
+# Comprehensive 1080p HD test suite
+python3 test_1080p.py
 
 # Expected output for 1080p support:
 # ✅ OpenCV CUDA support is available!
 # ✅ ONNX Runtime CUDA support available!
 # 🎉 GPU acceleration is ready to go!
 # 📊 CUDA devices: 1+ (for 1080p processing)
+
+# Test specific components:
+python3 test_1080p.py --gpu-only         # GPU functionality only
+python3 test_1080p.py --capture-only     # Video capture only
+python3 test_1080p.py --vcam-only        # Virtual camera only
+python3 test_1080p.py --quick            # Quick test (30 seconds)
 ```
 
 ### Monitor 1080p HD GPU Usage
@@ -377,6 +386,9 @@ nvidia-smi --loop-ms=1000
 ### 1080p Performance Test
 
 ```bash
+# Run comprehensive 1080p test suite
+python3 test_1080p.py
+
 # Run GPU version and verify 1080p performance
 ./build/bgremover_gpu --vcam
 
@@ -384,6 +396,10 @@ nvidia-smi --loop-ms=1000
 # "🚀 1080p HD GPU Performance: 30.0 FPS"
 # "✅ GPU memory sufficient (24MB required for 1080p)"
 # "📊 1080p HD processing requires ~24MB for frame buffers"
+
+# Automated test using shell script
+./test_1080p.sh --quick        # Quick test
+./test_1080p.sh               # Full test
 ```
 
 ## 📊 Build System
