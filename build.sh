@@ -84,6 +84,7 @@ get_cuda_arch_bin() {
         *"RTX 4080 SUPER"*) echo "8.9";;
         *"RTX 4080"*) echo "8.9";;
         *"RTX 4070 TI SUPER"*) echo "8.9";;
+        *"4070 TI SUPER"*|"4070 Ti SUPER"*) echo "8.9";;
         *"RTX 4070 TI"*) echo "8.9";;
         *"RTX 4070 SUPER"*) echo "8.9";;
         *"RTX 4070"*) echo "8.9";;
