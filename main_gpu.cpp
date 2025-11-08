@@ -316,18 +316,32 @@ int main(int argc, char** argv) {
         if (cuda_available) {
             cout << "✅ CUDA execution provider available" << endl;
             
-            // Try to enable CUDA provider with basic options
+            // Configure and append CUDA provider to session options
             try {
-                // For ONNX Runtime 1.19.0, try basic CUDA provider configuration
-                // Note: The exact API may vary, so we use a try-catch approach
-                #ifdef ENABLE_CUDA_PROVIDER
-                // Attempt to add CUDA provider (API may differ in 1.19.0)
-                // This is a placeholder - actual API may need adjustment
-                // session_options.AppendExecutionProvider_CUDA({});
-                cout << "⚠️  CUDA provider configuration not available in this version" << endl;
-                #endif
+                // Create CUDA provider options using C API
+                OrtCUDAProviderOptionsV2* cuda_options = nullptr;
+                Ort::GetApi().CreateCUDAProviderOptions(&cuda_options);
+                
+                // Configure device_id=0
+                std::vector<const char*> keys{"device_id"};
+                std::vector<const char*> values{"0"};
+                Ort::GetApi().UpdateCUDAProviderOptions(cuda_options, keys.data(), values.data(), 1);
+                
+                // Append CUDA provider to session options
+                Ort::GetApi().SessionOptionsAppendExecutionProvider_CUDA_V2(
+                    static_cast<OrtSessionOptions*>(session_options),
+                    cuda_options
+                );
+                
+                // Release CUDA provider options
+                Ort::GetApi().ReleaseCUDAProviderOptions(cuda_options);
+                
+                cout << "✅ CUDA provider successfully configured with device_id=0" << endl;
             } catch (const Ort::Exception& e) {
-                cout << "⚠️  Could not enable CUDA provider: " << e.what() << endl;
+                cout << "⚠️  Could not configure CUDA provider: " << e.what() << endl;
+                cuda_available = false;
+            } catch (const exception& e) {
+                cout << "⚠️  Unexpected error configuring CUDA provider: " << e.what() << endl;
                 cuda_available = false;
             }
         } else {
@@ -338,7 +352,7 @@ int main(int argc, char** argv) {
         cuda_available = false;
     }
     
-    // Create session
+    // Create session with configured options
     Ort::Session session(env, "models/u2net.onnx", session_options);
     
     // Initialize GPU memory manager before session creation
