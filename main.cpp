@@ -20,6 +20,8 @@ void showUsage(const std::string& program_name) {
     std::cout << "  --blur-low              Use low blur intensity (7x7 kernel)\n";
     std::cout << "  --blur-mid              Use medium blur intensity (15x15 kernel) [default]\n";
     std::cout << "  --blur-high             Use high blur intensity (25x25 kernel)\n";
+    std::cout << "  --background-image PATH # Replace background with image (e.g. --background-image background.jpg)\n";
+    std::cout << "  --bg-image PATH         # Short form for background image\n";
     std::cout << "\n";
     std::cout << "Arguments:\n";
     std::cout << "  video_source            Video file path or device number (default: 0 for webcam)\n";
@@ -28,23 +30,50 @@ void showUsage(const std::string& program_name) {
     std::cout << "  " << program_name << "                    # Use webcam with default settings\n";
     std::cout << "  " << program_name << " --no-blur          # Disable background blur\n";
     std::cout << "  " << program_name << " --blur-high        # Use high blur intensity\n";
+    std::cout << "  " << program_name << " --background-image background.jpg  # Use custom background\n";
     std::cout << "  " << program_name << " video.mp4          # Process video file\n";
     std::cout << "  " << program_name << " 1                  # Use device 1 as input\n";
 }
 
 // Function to show current settings
-void showCurrentSettings(bool blur_enabled, const std::string& blur_level) {
+void showCurrentSettings(bool blur_enabled, const std::string& blur_level, const std::string& background_image) {
     std::cout << "Current settings:\n";
-    std::cout << "  Background blur: " << (blur_enabled ? "Enabled" : "Disabled") << "\n";
-    if (blur_enabled) {
-        std::cout << "  Blur intensity: " << blur_level << "\n";
-        Size kernel_size;
-        if (blur_level == "low") kernel_size = Size(7, 7);
-        else if (blur_level == "high") kernel_size = Size(25, 25);
-        else kernel_size = Size(15, 15);  // mid
-        std::cout << "  Kernel size: " << kernel_size.width << "x" << kernel_size.height << "\n";
+    if (!background_image.empty()) {
+        std::cout << "  Background replacement: " << background_image << " (ENABLED)\n";
+    } else {
+        std::cout << "  Background blur: " << (blur_enabled ? "Enabled" : "Disabled") << "\n";
+        if (blur_enabled) {
+            std::cout << "  Blur intensity: " << blur_level << "\n";
+            Size kernel_size;
+            if (blur_level == "low") kernel_size = Size(7, 7);
+            else if (blur_level == "high") kernel_size = Size(25, 25);
+            else kernel_size = Size(15, 15);  // mid
+            std::cout << "  Kernel size: " << kernel_size.width << "x" << kernel_size.height << "\n";
+        }
     }
     std::cout << "\n";
+}
+
+// Background replacement blend - use custom background image
+Mat replace_background(const Mat& frame, const Mat& mask, const Mat& background) {
+    if (background.empty()) {
+        return frame;  // Fallback to original frame
+    }
+    
+    // Resize background to match frame size
+    Mat background_resized;
+    resize(background, background_resized, frame.size());
+    
+    // Clean, simple mask (0 or 255)
+    Mat mask_clean = (mask > 0.5);
+    
+    // Create output by combining person (from frame) and background
+    Mat output = background_resized.clone();
+    
+    // Copy person from original frame using mask
+    frame.copyTo(output, mask_clean);
+    
+    return output;
 }
 
 // Run inference and return properly isolated mask
@@ -95,6 +124,7 @@ int main(int argc, char** argv) {
     std::string source = "0";
     bool blur_enabled = true;
     std::string blur_level = "mid";
+    std::string background_image = "";
     
     // Parse command-line arguments
     for (int i = 1; i < argc; ++i) {
@@ -110,15 +140,31 @@ int main(int argc, char** argv) {
             blur_level = "mid";
         } else if (arg == "--blur-high") {
             blur_level = "high";
+        } else if ((arg == "--background-image" || arg == "--bg-image") && i + 1 < argc) {
+            background_image = argv[++i];
         } else if (i == 1 && arg != "--no-blur" && arg != "--no-background-blur" && 
                    arg != "--blur-low" && arg != "--blur-mid" && arg != "--blur-high" &&
+                   arg != "--background-image" && arg != "--bg-image" &&
                    arg != "-h" && arg != "--help") {
             source = arg;  // This is the video source
         }
     }
     
+    // Load background image if specified
+    Mat background_mat;
+    if (!background_image.empty()) {
+        background_mat = imread(background_image, IMREAD_COLOR);
+        if (background_mat.empty()) {
+            cerr << "❌ Failed to load background image: " << background_image << "\n";
+            return 1;
+        } else {
+            cout << "✅ Loaded background image: " << background_image 
+                 << " (" << background_mat.cols << "x" << background_mat.rows << ")\n";
+        }
+    }
+    
     // Show current settings
-    showCurrentSettings(blur_enabled, blur_level);
+    showCurrentSettings(blur_enabled, blur_level, background_image);
     
     VideoCapture cap;
     if (source == "0") {
@@ -208,7 +254,11 @@ int main(int argc, char** argv) {
         
         // Optimized pixel-level blend
         Mat mask_clean = (mask > 0.5);
-        if (blur_enabled) {
+        if (!background_image.empty()) {
+            // Use background replacement
+            output = replace_background(frame, mask, background_mat);
+        } else if (blur_enabled) {
+            // Use blur effect
             frame.copyTo(output, mask_clean);
             output.setTo(blurred, ~mask_clean);
         } else {
@@ -216,12 +266,17 @@ int main(int argc, char** argv) {
             frame.copyTo(output);
         }
 
-        // Create window title with blur settings
-        std::string blur_info = blur_enabled ? 
-            (blur_level == "low" ? " (Low Blur)" : 
-             blur_level == "high" ? " (High Blur)" : " (Mid Blur)") : 
-            " (No Blur)";
-        std::string window_title = "Background Removed (CPU)" + blur_info;
+        // Create window title with processing settings
+        std::string processing_info;
+        if (!background_image.empty()) {
+            processing_info = " (Custom Background)";
+        } else if (blur_enabled) {
+            processing_info = blur_level == "low" ? " (Low Blur)" : 
+                             blur_level == "high" ? " (High Blur)" : " (Mid Blur)";
+        } else {
+            processing_info = " (No Blur)";
+        }
+        std::string window_title = "Background Removed (CPU)" + processing_info;
         imshow(window_title, output);
         if (waitKey(1) == 27) break;  // ESC
         
