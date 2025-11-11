@@ -680,22 +680,22 @@ int main(int argc, char** argv) {
     bool cuda_used = false;
     if (cuda_available) {
         logSuccess("GPU acceleration enabled!");
-        logInfo("Processing requires ~" + std::to_string(estimated_1080p_mb) + "MB for frame buffers");
+        logMessage(LogLevel::NORMAL, "Processing requires ~" + std::to_string(estimated_1080p_mb) + "MB for frame buffers");
         gpu_manager.printMemoryStats("after model load");
         cuda_used = true;
     } else {
         logWarning("Using CPU fallback (GPU not available or not configured)");
-        logInfo("CPU processing may be slower - consider GPU version for optimal performance");
+        logMessage(LogLevel::NORMAL, "CPU processing may be slower - consider GPU version for optimal performance");
     }
     
     logSuccess("Model loaded successfully!");
 
     if (!quiet_mode) {
-        logInfo("Process started with PID: " + std::to_string(getpid()));
+        logMessage(LogLevel::NORMAL, "Process started with PID: " + std::to_string(getpid()));
         if (show_preview) {
-            logInfo("Press ESC in preview window to quit");
+            logMessage(LogLevel::NORMAL, "Press ESC in preview window to quit");
         } else {
-            logInfo("Press CTRL+C to quit");
+            logMessage(LogLevel::NORMAL, "Press CTRL+C to quit");
         }
     }
     cv::Mat frame;
@@ -905,7 +905,7 @@ int main(int argc, char** argv) {
     // Close stats file if open
     if (stats_file_stream.is_open()) {
         stats_file_stream.close();
-        logInfo("Stats file closed: " + stats_file);
+        logMessage(LogLevel::NORMAL, "Stats file closed: " + stats_file);
     }
     
     // Clear pre-allocated matrices to free memory
@@ -914,7 +914,7 @@ int main(int argc, char** argv) {
     output.release();
     blurred.release();
     
-    logInfo("Processing cleanup completed");
+    logMessage(LogLevel::NORMAL, "Processing cleanup completed");
     
     return 0;
 }
