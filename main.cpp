@@ -410,20 +410,20 @@ int main(int argc, char** argv) {
                 frame.copyTo(output);
                 logWarning("Invalid mask detected - using original frame");
             } else {
-                // Use blur effect with safe mask operations
+                // Use blur effect
                 frame.copyTo(output, mask_clean);
-                
+        
                 // Safety check for blurred frame and create inverted mask safely
                 if (!blurred.empty() && blurred.size() == output.size() && blurred.type() == output.type()) {
-                    // Create inverted mask safely
-                    Mat inverted_mask;
-                    bitwise_not(mask_clean, inverted_mask);
-                    output.setTo(blurred, inverted_mask);
+                    // Create proper 3-channel mask for the blurred background
+                    Mat mask_3channel;
+                    cvtColor(~mask_clean, mask_3channel, COLOR_GRAY2BGR);
+                    blurred.copyTo(output, mask_3channel);
                 } else {
                     // Fallback: use original frame for background
-                    Mat inverted_mask;
-                    bitwise_not(mask_clean, inverted_mask);
-                    frame.copyTo(output, inverted_mask);
+                    Mat mask_3channel;
+                    cvtColor(~mask_clean, mask_3channel, COLOR_GRAY2BGR);
+                    frame.copyTo(output, mask_3channel);
                 }
             }
         } else {
