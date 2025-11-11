@@ -33,6 +33,7 @@ void showUsage(const std::string& program_name) {
     std::cout << "  --blur-high             Use high blur intensity (25x25 kernel)\n";
     std::cout << "  --background-image PATH # Replace background with image (e.g. --background-image background.jpg)\n";
     std::cout << "  --bg-image PATH         # Short form for background image\n";
+    std::cout << "  --no-preview            Disable preview window\n";
     std::cout << "  --no-vcam               Disable virtual camera output\n";
     std::cout << "\n";
     std::cout << "Arguments:\n";
@@ -51,7 +52,7 @@ void showUsage(const std::string& program_name) {
 // Function to show current settings
 void showCurrentSettings(bool blur_enabled, const std::string& blur_level, 
                         bool vcam_enabled, const std::string& vcam_device,
-                        const std::string& background_image) {
+                        const std::string& background_image, bool show_preview) {
     std::cout << "Current settings:\n";
     if (!background_image.empty()) {
         std::cout << "  Background replacement: " << background_image << " (ENABLED)\n";
@@ -66,6 +67,7 @@ void showCurrentSettings(bool blur_enabled, const std::string& blur_level,
             std::cout << "  Kernel size: " << kernel_size.width << "x" << kernel_size.height << "\n";
         }
     }
+    std::cout << "  Preview window: " << (show_preview ? "Enabled" : "Disabled") << "\n";
     std::cout << "  Virtual camera: " << (vcam_enabled ? "Enabled" : "Disabled") << "\n";
     if (vcam_enabled) {
         std::cout << "  Virtual camera device: " << vcam_device << "\n";
@@ -355,6 +357,7 @@ int main(int argc, char** argv) {
     std::string source = "0";
     bool vcam_enabled = false;
     std::string vcam_device = "/dev/video2";
+    bool show_preview = true;
     bool blur_enabled = true;
     std::string blur_level = "mid";
     std::string background_image = "";
@@ -369,6 +372,8 @@ int main(int argc, char** argv) {
             vcam_enabled = true;
         } else if (arg == "--vcam-device" && i + 1 < argc) {
             vcam_device = argv[++i];
+        } else if (arg == "--no-preview") {
+            show_preview = false;
         } else if (arg == "--no-vcam") {
             vcam_enabled = false;
         } else if (arg == "--no-blur" || arg == "--no-background-blur") {
@@ -404,7 +409,7 @@ int main(int argc, char** argv) {
     }
     
     // Show current settings
-    showCurrentSettings(blur_enabled, blur_level, vcam_enabled, vcam_device, background_image);
+    showCurrentSettings(blur_enabled, blur_level, vcam_enabled, vcam_device, background_image, show_preview);
     
     cv::VideoCapture cap;
     if (source == "0") {
@@ -644,8 +649,11 @@ int main(int argc, char** argv) {
                           "Background Removed (GPU)" + processing_info) :
             (vcam_enabled ? "Background Removed (CPU + Virtual Camera)" + processing_info : 
                           "Background Removed (CPU)" + processing_info);
-        cv::imshow(window_title, output);
-        if (cv::waitKey(1) == 27) break;  // ESC
+        
+        if (show_preview) {
+            cv::imshow(window_title, output);
+            if (cv::waitKey(1) == 27) break;  // ESC
+        }
         
         // Enhanced performance monitoring with memory info
         frame_count++;
@@ -674,6 +682,11 @@ int main(int argc, char** argv) {
                 processing_info = " [No Blur]";
             }
             
+            // Add preview info to performance output
+            if (!show_preview) {
+                processing_info += " [No Preview]";
+            }
+            
             std::cout << "🚀 " << perf_label << " Performance: " 
                  << fps_real << " FPS (" << frame_count << " frames in "
                  << duration.count() << "ms)" << processing_info << std::endl;
@@ -688,7 +701,9 @@ int main(int argc, char** argv) {
 
     // Proper cleanup
     cap.release();
-    cv::destroyAllWindows();
+    if (show_preview) {
+        cv::destroyAllWindows();
+    }
     
     // Final memory stats
     if (cuda_available && cuda_used) {
