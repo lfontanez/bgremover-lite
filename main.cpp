@@ -93,22 +93,22 @@ void showUsage(const std::string& program_name) {
 
 // Function to show current settings
 void showCurrentSettings(bool blur_enabled, const std::string& blur_level, const std::string& background_image, bool show_preview) {
-    logInfo("Current settings:");
+    logMessage(LogLevel::NORMAL, "Current settings:");
     if (!background_image.empty()) {
-        logInfo("  Background replacement: " + background_image + " (ENABLED)");
+        logMessage(LogLevel::NORMAL, "  Background replacement: " + background_image + " (ENABLED)");
     } else {
-        logInfo("  Background blur: " + std::string(blur_enabled ? "Enabled" : "Disabled"));
+        logMessage(LogLevel::NORMAL, "  Background blur: " + std::string(blur_enabled ? "Enabled" : "Disabled"));
         if (blur_enabled) {
-            logInfo("  Blur intensity: " + blur_level);
+            logMessage(LogLevel::NORMAL, "  Blur intensity: " + blur_level);
             Size kernel_size;
             if (blur_level == "low") kernel_size = Size(7, 7);
             else if (blur_level == "high") kernel_size = Size(25, 25);
             else kernel_size = Size(15, 15);  // mid
-            logInfo("  Kernel size: " + std::to_string(kernel_size.width) + "x" + std::to_string(kernel_size.height));
+            logMessage(LogLevel::NORMAL, "  Kernel size: " + std::to_string(kernel_size.width) + "x" + std::to_string(kernel_size.height));
         }
     }
-    logInfo("  Preview window: " + std::string(show_preview ? "Enabled" : "Disabled"));
-    logInfo("");
+    logMessage(LogLevel::NORMAL, "  Preview window: " + std::string(show_preview ? "Enabled" : "Disabled"));
+    logMessage(LogLevel::NORMAL, "");
 }
 
 // Background replacement blend - use custom background image
@@ -344,11 +344,11 @@ int main(int argc, char** argv) {
     logSuccess("Model loaded successfully!");
 
     if (!quiet_mode) {
-        logInfo("Process started with PID: " + std::to_string(getpid()));
+        logMessage(LogLevel::NORMAL, "Process started with PID: " + std::to_string(getpid()));
         if (show_preview) {
-            logInfo("Press ESC in preview window to quit");
+            logMessage(LogLevel::NORMAL, "Press ESC in preview window to quit");
         } else {
-            logInfo("Press CTRL+C to quit");
+            logMessage(LogLevel::NORMAL, "Press CTRL+C to quit");
         }
     }
     Mat frame;
