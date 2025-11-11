@@ -93,22 +93,22 @@ void showUsage(const std::string& program_name) {
 
 // Function to show current settings
 void showCurrentSettings(bool blur_enabled, const std::string& blur_level, const std::string& background_image, bool show_preview) {
-    std::cout << "Current settings:\n";
+    logInfo("Current settings:");
     if (!background_image.empty()) {
-        std::cout << "  Background replacement: " << background_image << " (ENABLED)\n";
+        logInfo("  Background replacement: " + background_image + " (ENABLED)");
     } else {
-        std::cout << "  Background blur: " << (blur_enabled ? "Enabled" : "Disabled") << "\n";
+        logInfo("  Background blur: " + std::string(blur_enabled ? "Enabled" : "Disabled"));
         if (blur_enabled) {
-            std::cout << "  Blur intensity: " << blur_level << "\n";
+            logInfo("  Blur intensity: " + blur_level);
             Size kernel_size;
             if (blur_level == "low") kernel_size = Size(7, 7);
             else if (blur_level == "high") kernel_size = Size(25, 25);
             else kernel_size = Size(15, 15);  // mid
-            std::cout << "  Kernel size: " << kernel_size.width << "x" << kernel_size.height << "\n";
+            logInfo("  Kernel size: " + std::to_string(kernel_size.width) + "x" + std::to_string(kernel_size.height));
         }
     }
-    std::cout << "  Preview window: " << (show_preview ? "Enabled" : "Disabled") << "\n";
-    std::cout << "\n";
+    logInfo("  Preview window: " + std::string(show_preview ? "Enabled" : "Disabled"));
+    logInfo("");
 }
 
 // Background replacement blend - use custom background image
@@ -344,11 +344,11 @@ int main(int argc, char** argv) {
     logSuccess("Model loaded successfully!");
 
     if (!quiet_mode) {
-        std::cout << "Process started with PID: " << getpid() << std::endl;
+        logInfo("Process started with PID: " + std::to_string(getpid()));
         if (show_preview) {
-            std::cout << "Press ESC in preview window to quit\n";
+            logInfo("Press ESC in preview window to quit");
         } else {
-            std::cout << "Press CTRL+C to quit\n";
+            logInfo("Press CTRL+C to quit");
         }
     }
     Mat frame;
