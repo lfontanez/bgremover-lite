@@ -695,6 +695,7 @@ int main(int argc, char** argv) {
     cv::Mat frame;
     auto start_time = std::chrono::high_resolution_clock::now();
     int frame_count = 0;
+    double fps_real = 0.0;
     
     // Pre-allocate buffers for processing to avoid frequent allocations
     cv::Mat mask, output, blurred;
@@ -810,7 +811,7 @@ int main(int argc, char** argv) {
         if (frame_count % 10 == 0) {  // More frequent updates
             auto current_time = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - start_time);
-            double fps_real = (frame_count * 1000.0) / duration.count();
+            fps_real = (frame_count * 1000.0) / duration.count();
             
             // Update and display GPU memory info if CUDA is available
             if (cuda_available && cuda_used) {
