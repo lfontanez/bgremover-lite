@@ -141,12 +141,14 @@ After successful build, you'll have:
 ./build/bgremover                    # Webcam with background blur
 ./build/bgremover --blur-high        # Strong background blur
 ./build/bgremover --background-image background.jpg  # Custom background
+./build/bgremover --no-preview       # No preview window (headless)
 
 # GPU version
 ./build/bgremover_gpu --help
 ./build/bgremover_gpu                # GPU-accelerated webcam
 ./build/bgremover_gpu --vcam         # Virtual camera output
 ./build/bgremover_gpu --blur-high    # High blur with GPU
+./build/bgremover_gpu --no-preview   # No preview window (headless)
 ```
 
 ### **Background Blur Control Options**
@@ -158,6 +160,7 @@ After successful build, you'll have:
 | `--blur-mid` | Balanced blur (default) | 15x15 | Medium |
 | `--blur-high` | Maximum background blur | 25x25 | Higher |
 | `--background-image PATH` | Replace with custom image | N/A | Minimal |
+| `--no-preview` | Disable preview window | N/A | Better performance |
 
 ### **Virtual Camera Support**
 
@@ -171,6 +174,16 @@ Send processed video to virtual camera device:
 # Virtual camera with different settings
 ./build/bgremover_gpu --vcam --blur-high        # High blur in virtual camera
 ./build/bgremover_gpu --vcam --background-image office.jpg  # Custom background
+
+# Virtual camera without preview (recommended for streaming)
+./build/bgremover_gpu --vcam --no-preview       # No preview window
+./build/bgremover_gpu --vcam --blur-high --no-preview  # High blur, no preview
+./build/bgremover_gpu --vcam --background-image studio.jpg --no-preview  # Custom background, no preview
+
+# Headless processing examples
+./build/bgremover_gpu --no-preview              # Headless webcam processing
+./build/bgremover --no-preview --blur-mid       # CPU version without preview
+./build/bgremover_gpu path/to/video.mp4 --no-preview --background-image background.jpg  # Process video without preview
 ```
 
 ---
