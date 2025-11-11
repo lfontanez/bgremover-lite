@@ -690,7 +690,7 @@ int main(int argc, char** argv) {
     logSuccess("Model loaded successfully!");
 
     if (!quiet_mode) {
-        std::cout << "Press ESC to quit\n";
+        logInfo("Press ESC to quit");
     }
     cv::Mat frame;
     auto start_time = std::chrono::high_resolution_clock::now();
