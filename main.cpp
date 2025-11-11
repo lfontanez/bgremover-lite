@@ -1,10 +1,57 @@
 #include <onnxruntime_cxx_api.h>
 #include <opencv2/opencv.hpp>
 #include <iostream>
+#include <fstream>
+#include <chrono>
+#include <vector>
+#include <memory>
 #include <string>
+#include <iomanip>
+#include <sstream>
 
 using namespace cv;
 using namespace std;
+
+// Global stats file stream
+std::ofstream stats_file_stream;
+
+// Logging level control
+enum class LogLevel {
+    QUIET = 0,
+    NORMAL = 1,
+    VERBOSE = 2
+};
+
+LogLevel current_log_level = LogLevel::NORMAL;
+
+// Logging helper functions
+void logMessage(LogLevel level, const std::string& message) {
+    if (level <= current_log_level) {
+        std::cout << message << std::endl;
+    }
+}
+
+void logError(const std::string& message) {
+    std::cerr << "❌ " << message << std::endl;
+}
+
+void logSuccess(const std::string& message) {
+    if (current_log_level >= LogLevel::NORMAL) {
+        std::cout << "✅ " << message << std::endl;
+    }
+}
+
+void logWarning(const std::string& message) {
+    if (current_log_level >= LogLevel::NORMAL) {
+        std::cout << "⚠️  " << message << std::endl;
+    }
+}
+
+void logInfo(const std::string& message) {
+    if (current_log_level >= LogLevel::VERBOSE) {
+        std::cout << "ℹ️  " << message << std::endl;
+    }
+}
 
 Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "bgremover");
 
@@ -23,6 +70,10 @@ void showUsage(const std::string& program_name) {
     std::cout << "  --blur-high             Use high blur intensity (25x25 kernel)\n";
     std::cout << "  --background-image PATH # Replace background with image (e.g. --background-image background.jpg)\n";
     std::cout << "  --bg-image PATH         # Short form for background image\n";
+    std::cout << "  -q, --quiet             Minimal output (only errors)\n";
+    std::cout << "  --verbose               Detailed output (current behavior)\n";
+    std::cout << "  --stats-file PATH       Save performance stats to file\n";
+    std::cout << "  --overlay-stats         Show real-time stats as video overlay\n";
     std::cout << "\n";
     std::cout << "Arguments:\n";
     std::cout << "  video_source            Video file path or device number (default: 0 for webcam)\n";
@@ -34,6 +85,9 @@ void showUsage(const std::string& program_name) {
     std::cout << "  " << program_name << " --background-image background.jpg  # Use custom background\n";
     std::cout << "  " << program_name << " video.mp4          # Process video file\n";
     std::cout << "  " << program_name << " 1                  # Use device 1 as input\n";
+    std::cout << "  " << program_name << " --quiet            # Minimal console output\n";
+    std::cout << "  " << program_name << " --stats-file stats.txt  # Save performance stats\n";
+    std::cout << "  " << program_name << " --overlay-stats    # Show stats on video\n";
 }
 
 // Function to show current settings
@@ -76,6 +130,42 @@ Mat replace_background(const Mat& frame, const Mat& mask, const Mat& background)
     frame.copyTo(output, mask_clean);
     
     return output;
+}
+
+// Function to draw stats overlay on the video frame
+void drawStatsOverlay(cv::Mat& frame, double fps, const std::string& blur_level, const std::string& background_image) {
+    // Create semi-transparent background rectangle
+    cv::Mat overlay = frame.clone();
+    cv::rectangle(overlay, cv::Point(10, 10), cv::Point(350, 100), cv::Scalar(0, 0, 0), -1);
+    cv::addWeighted(frame, 0.7, overlay, 0.3, 0, frame);
+    
+    // Set text properties
+    int font = cv::FONT_HERSHEY_SIMPLEX;
+    double font_scale = 0.6;
+    cv::Scalar text_color(255, 255, 255); // White text
+    int thickness = 1;
+    int line_type = cv::LINE_AA;
+    
+    int y_offset = 30;
+    
+    // Draw FPS
+    std::string fps_text = "FPS: " + std::to_string(static_cast<int>(fps));
+    cv::putText(frame, fps_text, cv::Point(20, y_offset), font, font_scale, text_color, thickness, line_type);
+    y_offset += 20;
+    
+    // Draw processing mode
+    std::string mode_text = "Mode: CPU";
+    cv::putText(frame, mode_text, cv::Point(20, y_offset), font, font_scale, text_color, thickness, line_type);
+    y_offset += 20;
+    
+    // Draw blur level or background type
+    std::string effect_text;
+    if (!background_image.empty()) {
+        effect_text = "Effect: Custom Background";
+    } else {
+        effect_text = "Effect: " + blur_level + " blur";
+    }
+    cv::putText(frame, effect_text, cv::Point(20, y_offset), font, font_scale, text_color, thickness, line_type);
 }
 
 // Run inference and return properly isolated mask
@@ -128,6 +218,10 @@ int main(int argc, char** argv) {
     bool blur_enabled = true;
     std::string blur_level = "mid";
     std::string background_image = "";
+    bool quiet_mode = false;
+    bool verbose_mode = true;
+    std::string stats_file = "";
+    bool overlay_stats = false;
     
     // Parse command-line arguments
     for (int i = 1; i < argc; ++i) {
@@ -147,11 +241,44 @@ int main(int argc, char** argv) {
             blur_level = "high";
         } else if ((arg == "--background-image" || arg == "--bg-image") && i + 1 < argc) {
             background_image = argv[++i];
+        } else if (arg == "-q" || arg == "--quiet") {
+            quiet_mode = true;
+            verbose_mode = false;
+        } else if (arg == "--verbose") {
+            verbose_mode = true;
+            quiet_mode = false;
+        } else if (arg == "--stats-file" && i + 1 < argc) {
+            stats_file = argv[++i];
+        } else if (arg == "--overlay-stats") {
+            overlay_stats = true;
         } else if (i == 1 && arg != "--no-blur" && arg != "--no-background-blur" && 
                    arg != "--blur-low" && arg != "--blur-mid" && arg != "--blur-high" &&
                    arg != "--background-image" && arg != "--bg-image" &&
+                   arg != "-q" && arg != "--quiet" && arg != "--verbose" &&
+                   arg != "--stats-file" && arg != "--overlay-stats" &&
                    arg != "-h" && arg != "--help") {
             source = arg;  // This is the video source
+        }
+    }
+    
+    // Set logging level based on flags
+    if (quiet_mode) {
+        current_log_level = LogLevel::QUIET;
+    } else if (verbose_mode) {
+        current_log_level = LogLevel::VERBOSE;
+    } else {
+        current_log_level = LogLevel::NORMAL;
+    }
+    
+    // Open stats file if specified
+    if (!stats_file.empty()) {
+        stats_file_stream.open(stats_file, std::ios::out | std::ios::trunc);
+        if (stats_file_stream.is_open()) {
+            // Write CSV header
+            stats_file_stream << "Timestamp,FPS,Processing_Time_ms,Frame_Count,Mode\n";
+            logSuccess("Stats file opened: " + stats_file);
+        } else {
+            logWarning("Failed to open stats file: " + stats_file);
         }
     }
     
@@ -160,30 +287,33 @@ int main(int argc, char** argv) {
     if (!background_image.empty()) {
         background_mat = imread(background_image, IMREAD_COLOR);
         if (background_mat.empty()) {
-            cerr << "❌ Failed to load background image: " << background_image << "\n";
+            logError("Failed to load background image: " + background_image);
             return 1;
         } else {
-            cout << "✅ Loaded background image: " << background_image 
-                 << " (" << background_mat.cols << "x" << background_mat.rows << ")\n";
+            logSuccess("Loaded background image: " + background_image + 
+                      " (" + std::to_string(background_mat.cols) + "x" + 
+                      std::to_string(background_mat.rows) + ")");
         }
     }
     
-    // Show current settings
-    showCurrentSettings(blur_enabled, blur_level, background_image, show_preview);
+    // Show current settings (only if not in quiet mode)
+    if (!quiet_mode) {
+        showCurrentSettings(blur_enabled, blur_level, background_image, show_preview);
+    }
     
     VideoCapture cap;
     if (source == "0") {
-        std::cout << "Attempting to open webcam (device 0)...\n";
+        logInfo("Attempting to open webcam (device 0)...");
         cap.open(0);
     } else {
-        std::cout << "Opening video file: " << source << "...\n";
+        logInfo("Opening video file: " + source + "...");
         cap.open(source);
     }
     if (!cap.isOpened()) { 
-        std::cerr << "Cannot open video source: " << source << "\n";
+        logError("Cannot open video source: " + source);
         return 1; 
     }
-    std::cout << "Video source opened successfully!\n";
+    logSuccess("Video source opened successfully!");
     
     // Get video properties
     double fps = cap.get(CAP_PROP_FPS);
@@ -192,22 +322,28 @@ int main(int argc, char** argv) {
     
     // Performance advisory for high resolutions
     if (width * height >= 1920 * 1080) {
-        std::cout << "🔍 High resolution detected (" << width << "x" << height << ") - consider GPU version for optimal performance\n";
+        logInfo("High resolution detected (" + std::to_string(width) + "x" + 
+               std::to_string(height) + ") - consider GPU version for optimal performance");
     } else if (width * height >= 1280 * 720) {
-        std::cout << "📺 HD resolution detected (" << width << "x" << height << ")\n";
+        logInfo("HD resolution detected (" + std::to_string(width) + "x" + 
+               std::to_string(height) + ")");
     }
     
-    std::cout << "Video properties - FPS: " << fps << ", Resolution: " 
-         << width << "x" << height << "\n";
+    logInfo("Video properties - FPS: " + std::to_string(fps) + ", Resolution: " + 
+           std::to_string(width) + "x" + std::to_string(height));
 
-    std::cout << "Loading U²-Net model...\n";
+    logInfo("Loading U²-Net model...");
     Ort::SessionOptions opts;
     opts.SetIntraOpNumThreads(1);
     Ort::Session session(env, "models/u2net.onnx", opts);
-    std::cout << "Model loaded successfully!\n";
+    logSuccess("Model loaded successfully!");
 
-    std::cout << "Press ESC to quit\n";
+    if (!quiet_mode) {
+        std::cout << "Press ESC to quit\n";
+    }
     Mat frame;
+    auto start_time = std::chrono::high_resolution_clock::now();
+    int frame_count = 0;
     bool first_frame = true;
     
     // Pre-allocate buffers for efficient 1080p processing
@@ -230,7 +366,8 @@ int main(int argc, char** argv) {
         if (frame.cols != width || frame.rows != height) {
             resize(frame, frame, Size(width, height));
             if (first_frame) {
-                std::cout << "📐 Resized input to: " << width << "x" << height << " for processing" << endl;
+                logInfo("Resized input to: " + std::to_string(width) + "x" + 
+                       std::to_string(height) + " for processing");
             }
         }
         
@@ -271,6 +408,14 @@ int main(int argc, char** argv) {
             frame.copyTo(output);
         }
 
+        // Draw stats overlay if enabled
+        if (overlay_stats) {
+            auto current_time = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - start_time);
+            double fps_real = (frame_count * 1000.0) / duration.count();
+            drawStatsOverlay(output, fps_real, blur_level, background_image);
+        }
+
         // Create window title with processing settings
         std::string processing_info;
         if (!background_image.empty()) {
@@ -285,6 +430,57 @@ int main(int argc, char** argv) {
         if (show_preview) {
             imshow(window_title, output);
             if (waitKey(1) == 27) break;  // ESC
+        }
+        
+        // Enhanced performance monitoring with logging level control
+        frame_count++;
+        if (frame_count % 10 == 0) {  // More frequent updates
+            auto current_time = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - start_time);
+            double fps_real = (frame_count * 1000.0) / duration.count();
+            
+            // Add processing info to performance output
+            std::string processing_info;
+            if (!background_image.empty()) {
+                processing_info = " [Custom Background]";
+            } else if (blur_enabled) {
+                processing_info = blur_level == "low" ? " [Low Blur]" : 
+                                 blur_level == "high" ? " [High Blur]" : " [Mid Blur]";
+            } else {
+                processing_info = " [No Blur]";
+            }
+            
+            // Add preview info to performance output
+            if (!show_preview) {
+                processing_info += " [No Preview]";
+            }
+            
+            logMessage(LogLevel::NORMAL, "⚡ CPU Performance: " + 
+                      std::to_string(fps_real) + " FPS (" + std::to_string(frame_count) + 
+                      " frames in " + std::to_string(duration.count()) + "ms)" + 
+                      processing_info);
+            
+            // Write to stats file if open
+            if (stats_file_stream.is_open()) {
+                // Get current timestamp
+                auto now = std::chrono::system_clock::now();
+                auto now_time = std::chrono::system_clock::to_time_t(now);
+                std::stringstream timestamp_ss;
+                timestamp_ss << std::put_time(std::localtime(&now_time), "%Y-%m-%d %H:%M:%S");
+                
+                // Write CSV line
+                stats_file_stream << timestamp_ss.str() << ","
+                                 << std::fixed << std::setprecision(2) << fps_real << ","
+                                 << duration.count() << ","
+                                 << frame_count << ","
+                                 << "CPU"
+                                 << "\n";
+                stats_file_stream.flush(); // Ensure data is written immediately
+            }
+            
+            // Reset for next measurement
+            frame_count = 0;
+            start_time = current_time;
         }
         
         first_frame = false;
@@ -302,7 +498,13 @@ int main(int argc, char** argv) {
     output.release();
     blurred.release();
     
-    std::cout << "🧹 CPU processing cleanup completed" << endl;
+    // Close stats file if open
+    if (stats_file_stream.is_open()) {
+        stats_file_stream.close();
+        logInfo("Stats file closed: " + stats_file);
+    }
+    
+    logMessage(LogLevel::NORMAL, "🧹 CPU processing cleanup completed");
     
     return 0;
 }
