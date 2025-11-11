@@ -234,16 +234,18 @@ BGRemover Lite now includes advanced background blur control with multiple inten
 - **Medium Blur**: `--blur-mid` - Default balance of quality and speed (15x15 kernel)
 - **High Blur**: `--blur-high` - Maximum blur effect (25x25 kernel)
 - **Custom Background**: `--background-image PATH` or `--bg-image PATH` - Replace background with custom image (e.g., `--background-image background.jpg`)
+- **No Preview**: `--no-preview` - Disables the preview window (useful for headless processing and virtual camera usage)
 
 **Default Settings:**
 - Background blur: **Enabled** 
 - Blur intensity: **Medium** (15x15 kernel)
+- Preview window: **Enabled** (shows processed video in a window)
 - For 1080p processing: Low (7x7), Medium (15x15), High (25x25)
 
 ### GPU-Accelerated Version (Recommended)
 
 ```bash
-# Webcam (default: medium blur, GPU)
+# Webcam (default: medium blur, GPU, with preview window)
 ./build/bgremover_gpu
 
 # Webcam with different blur levels
@@ -256,14 +258,21 @@ BGRemover Lite now includes advanced background blur control with multiple inten
 ./build/bgremover_gpu --background-image background.jpg   # Custom background (long form)
 ./build/bgremover_gpu --bg-image background.jpg           # Custom background (short form)
 
+# Webcam without preview window (headless processing)
+./build/bgremover_gpu --no-preview                 # No preview window, console output only
+./build/bgremover_gpu --no-preview --blur-mid      # No preview, with medium blur
+./build/bgremover_gpu --no-preview --background-image office.jpg  # No preview, custom background
+
 # Video file with different options
 ./build/bgremover_gpu path/to/video.mp4 --blur-low        # Subtle blur
 ./build/bgremover_gpu path/to/video.mp4 --blur-high       # Strong blur
 ./build/bgremover_gpu path/to/video.mp4 --background-image background.jpg  # Custom background
+./build/bgremover_gpu path/to/video.mp4 --no-preview      # Process video without preview
 
 # With specific device and settings
 ./build/bgremover_gpu 0 --blur-high                   # Device 0 with high blur
 ./build/bgremover_gpu 0 --background-image office.jpg # Device 0 with office background
+./build/bgremover_gpu 0 --no-preview                  # Device 0 without preview window
 ```
 
 ### CPU Version (Fallback)
@@ -279,13 +288,20 @@ BGRemover Lite now includes advanced background blur control with multiple inten
 ./build/bgremover --background-image background.jpg   # Custom background (CPU version)
 ./build/bgremover --bg-image office.jpg               # Short form
 
+# Webcam without preview window (headless processing)
+./build/bgremover --no-preview                 # No preview window, console output only
+./build/bgremover --no-preview --blur-mid      # No preview, with medium blur
+./build/bgremover --no-preview --background-image studio.jpg  # No preview, custom background
+
 # Video file with different options
 ./build/bgremover path/to/video.mp4 --blur-high       # Strong blur on CPU
 ./build/bgremover path/to/video.mp4 --background-image landscape.jpg  # Custom background
+./build/bgremover path/to/video.mp4 --no-preview      # Process video without preview
 
 # Different input devices
 ./build/bgremover 1 --blur-low                    # Device 1 with low blur
 ./build/bgremover 1 --background-image beach.jpg  # Device 1 with beach background
+./build/bgremover 1 --no-preview                  # Device 1 without preview window
 ```
 
 ### 1080p HD Controls
@@ -463,6 +479,69 @@ The custom background replacement feature allows you to replace your background 
 - GPU memory usage increases slightly with larger blur kernels
 
 ## 📹 Virtual Camera
+
+### When to Use --no-preview
+
+The `--no-preview` flag is essential for several scenarios where you don't need or want a local preview window:
+
+#### **Virtual Camera Usage**
+When using virtual camera output, the preview window is redundant since the processed video is sent directly to applications:
+```bash
+# Perfect for virtual camera - no need for local preview
+./build/bgremover_gpu --vcam --no-preview
+
+# Virtual camera with custom settings
+./build/bgremover_gpu --vcam --blur-high --no-preview
+./build/bgremover_gpu --vcam --background-image office.jpg --no-preview
+```
+
+#### **Headless Processing**
+For server environments, automated processing, or when running in containers:
+```bash
+# Headless webcam processing
+./build/bgremover_gpu --no-preview
+
+# Headless video file processing
+./build/bgremover_gpu path/to/video.mp4 --no-preview --background-image background.jpg
+
+# Automated background processing
+./build/bgremover --no-preview --blur-mid --background-image corporate.jpg
+```
+
+#### **Performance Optimization**
+Disabling the preview window can provide minor performance improvements:
+```bash
+# Maximum performance for 1080p processing
+./build/bgremover_gpu --no-preview --blur-low
+
+# CPU processing without GUI overhead
+./build/bgremover --no-preview --blur-high
+```
+
+#### **Server/Production Deployment**
+For production environments where GUI is not available:
+```bash
+# Production virtual camera setup
+./build/bgremover_gpu --vcam --no-preview --background-image production-bg.jpg
+
+# Automated processing pipeline
+./build/bgremover --no-preview --background-image stream-background.jpg
+```
+
+#### **Multiple Instance Management**
+When running multiple instances, `--no-preview` prevents window clutter:
+```bash
+# Multiple webcams without preview windows
+./build/bgremover_gpu /dev/video0 --vcam-device /dev/video2 --no-preview &
+./build/bgremover_gpu /dev/video1 --vcam-device /dev/video3 --no-preview &
+```
+
+**Benefits of --no-preview:**
+- **Reduced Memory Usage**: Saves ~50-100MB of RAM
+- **Better Performance**: Eliminates GUI rendering overhead
+- **Cleaner Interface**: No window management needed
+- **Server Friendly**: Works in headless environments
+- **Multiple Instance Support**: Run multiple processes without window clutter
 
 ### Virtual Camera Feature 🌐
 The Virtual Camera feature makes your processed video available to any application that accepts camera input, including Zoom, Microsoft Teams, Google Meet, OBS Studio, Discord, and more. Instead of opening a window, the processed video is sent to a virtual camera device (typically `/dev/video2`) that appears as a regular webcam to other applications.
