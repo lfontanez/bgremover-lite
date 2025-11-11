@@ -136,7 +136,7 @@ Mat replace_background(const Mat& frame, const Mat& mask, const Mat& background)
 void drawStatsOverlay(cv::Mat& frame, double fps, const std::string& blur_level, const std::string& background_image) {
     // Create semi-transparent background rectangle
     cv::Mat overlay = frame.clone();
-    cv::rectangle(overlay, cv::Point(10, 10), cv::Point(350, 100), cv::Scalar(0, 0, 0), -1);
+    cv::rectangle(overlay, cv::Point(10, 10), cv::Point(350, 120), cv::Scalar(0, 0, 0), -1);
     cv::addWeighted(frame, 0.7, overlay, 0.3, 0, frame);
     
     // Set text properties
@@ -166,6 +166,10 @@ void drawStatsOverlay(cv::Mat& frame, double fps, const std::string& blur_level,
         effect_text = "Effect: " + blur_level + " blur";
     }
     cv::putText(frame, effect_text, cv::Point(20, y_offset), font, font_scale, text_color, thickness, line_type);
+    y_offset += 20;
+    
+    // Draw memory info (CPU mode - N/A)
+    cv::putText(frame, "GPU Memory: N/A", cv::Point(20, y_offset), font, font_scale, text_color, thickness, line_type);
 }
 
 // Run inference and return properly isolated mask
@@ -274,8 +278,8 @@ int main(int argc, char** argv) {
     if (!stats_file.empty()) {
         stats_file_stream.open(stats_file, std::ios::out | std::ios::trunc);
         if (stats_file_stream.is_open()) {
-            // Write CSV header
-            stats_file_stream << "Timestamp,FPS,Processing_Time_ms,Frame_Count,Mode\n";
+            // Write CSV header (matching GPU version format)
+            stats_file_stream << "Timestamp,FPS,GPU_Memory_Used_GB,GPU_Memory_Total_GB,Processing_Time_ms,Frame_Count,Mode\n";
             logSuccess("Stats file opened: " + stats_file);
         } else {
             logWarning("Failed to open stats file: " + stats_file);
@@ -468,9 +472,11 @@ int main(int argc, char** argv) {
                 std::stringstream timestamp_ss;
                 timestamp_ss << std::put_time(std::localtime(&now_time), "%Y-%m-%d %H:%M:%S");
                 
-                // Write CSV line
+                // Write CSV line (matching GPU version format with GPU memory as 0.0 for CPU)
                 stats_file_stream << timestamp_ss.str() << ","
                                  << std::fixed << std::setprecision(2) << fps_real << ","
+                                 << std::fixed << std::setprecision(3) << 0.0 << ","
+                                 << std::fixed << std::setprecision(3) << 0.0 << ","
                                  << duration.count() << ","
                                  << frame_count << ","
                                  << "CPU"
