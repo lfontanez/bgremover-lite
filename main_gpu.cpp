@@ -343,10 +343,10 @@ cv::Mat run_inference(Ort::Session& session, const cv::Mat& img, bool cuda_avail
         if (cuda_available) {
             gpu_manager.printMemoryStats();
         }
-        std::cout << (cuda_available ? "🚀 GPU" : "⚡ CPU") << " Performance: " 
-             << frame_count / 2.0 << " FPS | Inference: " 
-             << inference_duration.count() << "ms | Total: " 
-             << duration.count() << "ms" << std::endl;
+        logInfo((cuda_available ? "🚀 GPU" : "⚡ CPU") + std::string(" Performance: ") + 
+                 std::to_string(frame_count / 2.0) + std::string(" FPS | Inference: ") + 
+                 std::to_string(inference_duration.count()) + std::string("ms | Total: ") + 
+                 std::to_string(duration.count()) + std::string("ms"));
         frame_count = 0;
         last_print_time = end_time;
     }
