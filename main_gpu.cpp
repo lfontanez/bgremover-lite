@@ -146,8 +146,8 @@ public:
             if (error == cudaSuccess) {
                 double total_gb = total_memory / (1024.0 * 1024.0 * 1024.0);
                 double free_gb = free_memory / (1024.0 * 1024.0 * 1024.0);
-                logSuccess("CUDA runtime initialized successfully");
-                logSuccess("GPU Memory: " + std::to_string(free_gb) + "GB free / " + 
+                logInfo("CUDA runtime initialized successfully");
+                logInfo("GPU Memory: " + std::to_string(free_gb) + "GB free / " + 
                      std::to_string(total_gb) + "GB total");
             } else {
                 logMessage(LogLevel::NORMAL, "CUDA initialized but memory query failed: " + 
