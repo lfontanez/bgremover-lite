@@ -150,7 +150,7 @@ public:
                 logSuccess("GPU Memory: " + std::to_string(free_gb) + "GB free / " + 
                      std::to_string(total_gb) + "GB total");
             } else {
-                logWarning("CUDA initialized but memory query failed: " + 
+                logMessage(LogLevel::NORMAL, "CUDA initialized but memory query failed: " + 
                      std::string(cudaGetErrorString(error)));
                 // Still set cuda_available to true since CUDA works
                 cuda_available = true;
