@@ -35,6 +35,10 @@ void showUsage(const std::string& program_name) {
     std::cout << "  --bg-image PATH         # Short form for background image\n";
     std::cout << "  --no-preview            Disable preview window\n";
     std::cout << "  --no-vcam               Disable virtual camera output\n";
+    std::cout << "  -q, --quiet             Minimal output (only errors)\n";
+    std::cout << "  --verbose               Detailed output (current behavior)\n";
+    std::cout << "  --stats-file PATH       Save performance stats to file\n";
+    std::cout << "  --overlay-stats         Show real-time stats as video overlay\n";
     std::cout << "\n";
     std::cout << "Arguments:\n";
     std::cout << "  video_source            Video file path or device number (default: 0 for webcam)\n";
@@ -47,6 +51,9 @@ void showUsage(const std::string& program_name) {
     std::cout << "  " << program_name << " --background-image background.jpg  # Use custom background\n";
     std::cout << "  " << program_name << " video.mp4          # Process video file\n";
     std::cout << "  " << program_name << " 1 --vcam-device /dev/video3  # Custom devices\n";
+    std::cout << "  " << program_name << " --quiet            # Minimal console output\n";
+    std::cout << "  " << program_name << " --stats-file stats.txt  # Save performance stats\n";
+    std::cout << "  " << program_name << " --overlay-stats    # Show stats on video\n";
 }
 
 // Function to show current settings
@@ -173,6 +180,44 @@ public:
 
 // Global GPU memory manager
 GPUMemoryManager gpu_manager;
+
+// Logging level control
+enum class LogLevel {
+    QUIET = 0,
+    NORMAL = 1,
+    VERBOSE = 2
+};
+
+LogLevel current_log_level = LogLevel::NORMAL;
+
+// Logging helper functions
+void logMessage(LogLevel level, const std::string& message) {
+    if (level <= current_log_level) {
+        std::cout << message << std::endl;
+    }
+}
+
+void logError(const std::string& message) {
+    std::cerr << "❌ " << message << std::endl;
+}
+
+void logSuccess(const std::string& message) {
+    if (current_log_level >= LogLevel::NORMAL) {
+        std::cout << "✅ " << message << std::endl;
+    }
+}
+
+void logWarning(const std::string& message) {
+    if (current_log_level >= LogLevel::NORMAL) {
+        std::cout << "⚠️  " << message << std::endl;
+    }
+}
+
+void logInfo(const std::string& message) {
+    if (current_log_level >= LogLevel::VERBOSE) {
+        std::cout << "ℹ️  " << message << std::endl;
+    }
+}
 
 // Simple Buffer Manager - GPU handled by ONNX Runtime
 class BufferManager {
@@ -361,6 +406,10 @@ int main(int argc, char** argv) {
     bool blur_enabled = true;
     std::string blur_level = "mid";
     std::string background_image = "";
+    bool quiet_mode = false;
+    bool verbose_mode = true;
+    std::string stats_file = "";
+    bool overlay_stats = false;
     
     // Parse command-line arguments
     for (int i = 1; i < argc; ++i) {
@@ -386,10 +435,22 @@ int main(int argc, char** argv) {
             blur_level = "high";
         } else if ((arg == "--background-image" || arg == "--bg-image") && i + 1 < argc) {
             background_image = argv[++i];
+        } else if (arg == "-q" || arg == "--quiet") {
+            quiet_mode = true;
+            verbose_mode = false;
+        } else if (arg == "--verbose") {
+            verbose_mode = true;
+            quiet_mode = false;
+        } else if (arg == "--stats-file" && i + 1 < argc) {
+            stats_file = argv[++i];
+        } else if (arg == "--overlay-stats") {
+            overlay_stats = true;
         } else if (i == 1 && arg != "--vcam" && arg != "-v" && arg != "--vcam-device" &&
                    arg != "--no-vcam" && arg != "--no-blur" && arg != "--no-background-blur" && 
                    arg != "--blur-low" && arg != "--blur-mid" && arg != "--blur-high" &&
                    arg != "--background-image" && arg != "--bg-image" &&
+                   arg != "-q" && arg != "--quiet" && arg != "--verbose" &&
+                   arg != "--stats-file" && arg != "--overlay-stats" &&
                    arg != "-h" && arg != "--help") {
             source = arg;  // This is the video source
         }
@@ -408,22 +469,24 @@ int main(int argc, char** argv) {
         }
     }
     
-    // Show current settings
-    showCurrentSettings(blur_enabled, blur_level, vcam_enabled, vcam_device, background_image, show_preview);
+    // Show current settings (only if not in quiet mode)
+    if (!quiet_mode) {
+        showCurrentSettings(blur_enabled, blur_level, vcam_enabled, vcam_device, background_image, show_preview);
+    }
     
     cv::VideoCapture cap;
     if (source == "0") {
-        std::cout << "Attempting to open webcam (device 0) with GPU acceleration...\n";
+        logInfo("Attempting to open webcam (device 0) with GPU acceleration...");
         cap.open(0);
     } else {
-        std::cout << "Opening video file: " << source << " with GPU acceleration...\n";
+        logInfo("Opening video file: " + source + " with GPU acceleration...");
         cap.open(source);
     }
     if (!cap.isOpened()) { 
-        std::cerr << "Cannot open video source: " << source << "\n";
+        logError("Cannot open video source: " + source);
         return 1; 
     }
-    std::cout << "Video source opened successfully!\n";
+    logSuccess("Video source opened successfully!");
     
     // Get video properties
     double fps = cap.get(cv::CAP_PROP_FPS);
@@ -464,7 +527,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    std::cout << "Loading U²-Net model with GPU acceleration...\n";
+    logInfo("Loading U²-Net model with GPU acceleration...");
     
     // Configure session options
     Ort::SessionOptions session_options;
@@ -475,7 +538,7 @@ int main(int argc, char** argv) {
     bool cuda_available = false;
     try {
         auto providers = Ort::GetAvailableProviders();
-        std::cout << "Available ONNX Runtime providers: ";
+        logInfo("Available ONNX Runtime providers: ");
         for (const auto& provider : providers) {
             std::cout << provider << " ";
         }
@@ -485,7 +548,7 @@ int main(int argc, char** argv) {
         cuda_available = std::find(providers.begin(), providers.end(), "CUDAExecutionProvider") != providers.end();
         
         if (cuda_available) {
-            std::cout << "✅ CUDA execution provider available" << std::endl;
+            logSuccess("CUDA execution provider available");
             
             // Configure and append CUDA provider to session options
             try {
@@ -507,19 +570,19 @@ int main(int argc, char** argv) {
                 // Release CUDA provider options
                 Ort::GetApi().ReleaseCUDAProviderOptions(cuda_options);
                 
-                std::cout << "✅ CUDA provider successfully configured with device_id=0" << std::endl;
+                logSuccess("CUDA provider successfully configured with device_id=0");
             } catch (const Ort::Exception& e) {
-                std::cout << "⚠️  Could not configure CUDA provider: " << e.what() << std::endl;
+                logWarning("Could not configure CUDA provider: " + std::string(e.what()));
                 cuda_available = false;
             } catch (const std::exception& e) {
-                std::cout << "⚠️  Unexpected error configuring CUDA provider: " << e.what() << std::endl;
+                logWarning("Unexpected error configuring CUDA provider: " + std::string(e.what()));
                 cuda_available = false;
             }
         } else {
-            std::cout << "⚠️  CUDA execution provider not available - using CPU only" << std::endl;
+            logWarning("CUDA execution provider not available - using CPU only");
         }
     } catch (const std::exception& e) {
-        std::cout << "Error checking providers: " << e.what() << std::endl;
+        logError("Error checking providers: " + std::string(e.what()));
         cuda_available = false;
     }
     
@@ -544,9 +607,11 @@ int main(int argc, char** argv) {
         std::cout << "📊 CPU processing may be slower - consider GPU version for optimal performance" << std::endl;
     }
     
-    std::cout << "Model loaded successfully!\n";
+    logSuccess("Model loaded successfully!");
 
-    std::cout << "Press ESC to quit\n";
+    if (!quiet_mode) {
+        std::cout << "Press ESC to quit\n";
+    }
     cv::Mat frame;
     auto start_time = std::chrono::high_resolution_clock::now();
     int frame_count = 0;
