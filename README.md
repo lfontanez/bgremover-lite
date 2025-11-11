@@ -627,6 +627,23 @@ Process a video file and send output to virtual camera:
 ./build/bgremover_gpu --vcam-device /dev/video3 path/to/video.mp4
 ```
 
+### Virtual Camera Without Preview
+
+For virtual camera usage, `--no-preview` is recommended since the processed video is sent directly to applications:
+
+```bash
+# Virtual camera without preview window (recommended)
+./build/bgremover_gpu --vcam --no-preview
+
+# Virtual camera with custom settings and no preview
+./build/bgremover_gpu --vcam --blur-high --no-preview
+./build/bgremover_gpu --vcam --background-image studio.jpg --no-preview
+./build/bgremover_gpu --vcam-device /dev/video3 --no-preview --blur-mid
+
+# Process video file to virtual camera without preview
+./build/bgremover_gpu --vcam path/to/video.mp4 --no-preview
+```
+
 ### Supported Applications
 
 The virtual camera works with any application that accepts webcam input:
