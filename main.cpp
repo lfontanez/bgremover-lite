@@ -17,6 +17,7 @@ void showUsage(const std::string& program_name) {
     std::cout << "  -h, --help              Show this help message\n";
     std::cout << "  --no-blur               Disable background blur\n";
     std::cout << "  --no-background-blur    Disable background blur (alternative)\n";
+    std::cout << "  --no-preview            Disable preview window\n";
     std::cout << "  --blur-low              Use low blur intensity (7x7 kernel)\n";
     std::cout << "  --blur-mid              Use medium blur intensity (15x15 kernel) [default]\n";
     std::cout << "  --blur-high             Use high blur intensity (25x25 kernel)\n";
@@ -36,7 +37,7 @@ void showUsage(const std::string& program_name) {
 }
 
 // Function to show current settings
-void showCurrentSettings(bool blur_enabled, const std::string& blur_level, const std::string& background_image) {
+void showCurrentSettings(bool blur_enabled, const std::string& blur_level, const std::string& background_image, bool show_preview) {
     std::cout << "Current settings:\n";
     if (!background_image.empty()) {
         std::cout << "  Background replacement: " << background_image << " (ENABLED)\n";
@@ -51,6 +52,7 @@ void showCurrentSettings(bool blur_enabled, const std::string& blur_level, const
             std::cout << "  Kernel size: " << kernel_size.width << "x" << kernel_size.height << "\n";
         }
     }
+    std::cout << "  Preview window: " << (show_preview ? "Enabled" : "Disabled") << "\n";
     std::cout << "\n";
 }
 
@@ -122,6 +124,7 @@ Mat run_inference(Ort::Session& session, const Mat& img) {
 int main(int argc, char** argv) {
     // Default command-line arguments
     std::string source = "0";
+    bool show_preview = true;
     bool blur_enabled = true;
     std::string blur_level = "mid";
     std::string background_image = "";
@@ -134,6 +137,8 @@ int main(int argc, char** argv) {
             return 0;
         } else if (arg == "--no-blur" || arg == "--no-background-blur") {
             blur_enabled = false;
+        } else if (arg == "--no-preview") {
+            show_preview = false;
         } else if (arg == "--blur-low") {
             blur_level = "low";
         } else if (arg == "--blur-mid") {
@@ -164,7 +169,7 @@ int main(int argc, char** argv) {
     }
     
     // Show current settings
-    showCurrentSettings(blur_enabled, blur_level, background_image);
+    showCurrentSettings(blur_enabled, blur_level, background_image, show_preview);
     
     VideoCapture cap;
     if (source == "0") {
@@ -277,15 +282,19 @@ int main(int argc, char** argv) {
             processing_info = " (No Blur)";
         }
         std::string window_title = "Background Removed (CPU)" + processing_info;
-        imshow(window_title, output);
-        if (waitKey(1) == 27) break;  // ESC
+        if (show_preview) {
+            imshow(window_title, output);
+            if (waitKey(1) == 27) break;  // ESC
+        }
         
         first_frame = false;
     }
 
     // Cleanup
     cap.release();
-    destroyAllWindows();
+    if (show_preview) {
+        destroyAllWindows();
+    }
     
     // Release pre-allocated matrices
     frame.release();
