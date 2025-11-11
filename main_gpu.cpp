@@ -19,6 +19,44 @@ using namespace std;
 
 Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "bgremover-gpu");
 
+// Logging level control
+enum class LogLevel {
+    QUIET = 0,
+    NORMAL = 1,
+    VERBOSE = 2
+};
+
+LogLevel current_log_level = LogLevel::NORMAL;
+
+// Logging helper functions
+void logMessage(LogLevel level, const std::string& message) {
+    if (level <= current_log_level) {
+        std::cout << message << std::endl;
+    }
+}
+
+void logError(const std::string& message) {
+    std::cerr << "❌ " << message << std::endl;
+}
+
+void logSuccess(const std::string& message) {
+    if (current_log_level >= LogLevel::NORMAL) {
+        std::cout << "✅ " << message << std::endl;
+    }
+}
+
+void logWarning(const std::string& message) {
+    if (current_log_level >= LogLevel::NORMAL) {
+        std::cout << "⚠️  " << message << std::endl;
+    }
+}
+
+void logInfo(const std::string& message) {
+    if (current_log_level >= LogLevel::VERBOSE) {
+        std::cout << "ℹ️  " << message << std::endl;
+    }
+}
+
 // Function to display help and usage information
 void showUsage(const std::string& program_name) {
     std::cout << "BGRemover Lite - GPU-Accelerated Background Removal\n";
@@ -185,44 +223,6 @@ GPUMemoryManager gpu_manager;
 
 // Global stats file stream
 std::ofstream stats_file_stream;
-
-// Logging level control
-enum class LogLevel {
-    QUIET = 0,
-    NORMAL = 1,
-    VERBOSE = 2
-};
-
-LogLevel current_log_level = LogLevel::NORMAL;
-
-// Logging helper functions
-void logMessage(LogLevel level, const std::string& message) {
-    if (level <= current_log_level) {
-        std::cout << message << std::endl;
-    }
-}
-
-void logError(const std::string& message) {
-    std::cerr << "❌ " << message << std::endl;
-}
-
-void logSuccess(const std::string& message) {
-    if (current_log_level >= LogLevel::NORMAL) {
-        std::cout << "✅ " << message << std::endl;
-    }
-}
-
-void logWarning(const std::string& message) {
-    if (current_log_level >= LogLevel::NORMAL) {
-        std::cout << "⚠️  " << message << std::endl;
-    }
-}
-
-void logInfo(const std::string& message) {
-    if (current_log_level >= LogLevel::VERBOSE) {
-        std::cout << "ℹ️  " << message << std::endl;
-    }
-}
 
 // Simple Buffer Manager - GPU handled by ONNX Runtime
 class BufferManager {
