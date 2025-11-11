@@ -406,7 +406,13 @@ int main(int argc, char** argv) {
         } else if (blur_enabled) {
             // Use blur effect
             frame.copyTo(output, mask_clean);
-            output.setTo(blurred, ~mask_clean);
+            // Safety check for blurred frame
+            if (!blurred.empty() && blurred.size() == output.size() && blurred.type() == output.type()) {
+                output.setTo(blurred, ~mask_clean);
+            } else {
+                // Fallback: use original frame for background
+                frame.copyTo(output, ~mask_clean);
+            }
         } else {
             // No blur - just show original frame
             frame.copyTo(output);
