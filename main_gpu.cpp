@@ -397,6 +397,60 @@ cv::Mat replace_background(const cv::Mat& frame, const cv::Mat& mask, const cv::
     return output;
 }
 
+// Function to draw stats overlay on the video frame
+void drawStatsOverlay(cv::Mat& frame, double fps, bool cuda_available, 
+                     const std::string& blur_level, const std::string& background_image,
+                     GPUMemoryManager& gpu_manager) {
+    // Create semi-transparent background rectangle
+    cv::Mat overlay = frame.clone();
+    cv::rectangle(overlay, cv::Point(10, 10), cv::Point(350, 120), cv::Scalar(0, 0, 0), -1);
+    cv::addWeighted(frame, 0.7, overlay, 0.3, 0, frame);
+    
+    // Set text properties
+    int font = cv::FONT_HERSHEY_SIMPLEX;
+    double font_scale = 0.6;
+    cv::Scalar text_color(255, 255, 255); // White text
+    int thickness = 1;
+    int line_type = cv::LINE_AA;
+    
+    int y_offset = 30;
+    
+    // Draw FPS
+    std::string fps_text = "FPS: " + std::to_string(static_cast<int>(fps));
+    cv::putText(frame, fps_text, cv::Point(20, y_offset), font, font_scale, text_color, thickness, line_type);
+    y_offset += 20;
+    
+    // Draw processing mode
+    std::string mode_text = "Mode: " + std::string(cuda_available ? "GPU" : "CPU");
+    cv::putText(frame, mode_text, cv::Point(20, y_offset), font, font_scale, text_color, thickness, line_type);
+    y_offset += 20;
+    
+    // Draw blur level or background type
+    std::string effect_text;
+    if (!background_image.empty()) {
+        effect_text = "Effect: Custom Background";
+    } else {
+        effect_text = "Effect: " + blur_level + " blur";
+    }
+    cv::putText(frame, effect_text, cv::Point(20, y_offset), font, font_scale, text_color, thickness, line_type);
+    y_offset += 20;
+    
+    // Draw GPU memory usage if available
+    if (cuda_available && gpu_manager.cuda_available) {
+        size_t current_free = 0, current_total = 0;
+        cudaError_t error = cudaMemGetInfo(&current_free, &current_total);
+        if (error == cudaSuccess) {
+            double used_gb = (current_total - current_free) / (1024.0 * 1024.0 * 1024.0);
+            double total_gb = current_total / (1024.0 * 1024.0 * 1024.0);
+            std::string memory_text = "GPU Memory: " + std::to_string(used_gb).substr(0, 4) + 
+                                    "GB / " + std::to_string(total_gb).substr(0, 4) + "GB";
+            cv::putText(frame, memory_text, cv::Point(20, y_offset), font, font_scale, text_color, thickness, line_type);
+        }
+    } else {
+        cv::putText(frame, "GPU Memory: N/A", cv::Point(20, y_offset), font, font_scale, text_color, thickness, line_type);
+    }
+}
+
 int main(int argc, char** argv) {
     // Default command-line arguments
     std::string source = "0";
@@ -705,6 +759,11 @@ int main(int argc, char** argv) {
             if (!vcam_output->writeFrame(output)) {
                 std::cerr << "⚠️ Virtual camera write failed\n";
             }
+        }
+        
+        // Draw stats overlay if enabled
+        if (overlay_stats) {
+            drawStatsOverlay(output, fps_real, cuda_available, blur_level, background_image, gpu_manager);
         }
         
         // Create window title with processing settings
