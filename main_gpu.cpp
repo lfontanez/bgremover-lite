@@ -456,6 +456,15 @@ int main(int argc, char** argv) {
         }
     }
     
+    // Set logging level based on flags
+    if (quiet_mode) {
+        current_log_level = LogLevel::QUIET;
+    } else if (verbose_mode) {
+        current_log_level = LogLevel::VERBOSE;
+    } else {
+        current_log_level = LogLevel::NORMAL;
+    }
+    
     // Load background image if specified
     cv::Mat background_mat;
     if (!background_image.empty()) {
