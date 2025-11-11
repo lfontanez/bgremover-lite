@@ -26,6 +26,7 @@ rm -rf build && ./build.sh
 | `--blur-low/--mid/--high` | Blur intensity levels | Varies |
 | `--background-image PATH` | Custom background | Minimal impact |
 | `--vcam` | Virtual camera output | +1-2ms latency |
+| `--no-preview` | Disable preview window | Better performance |
 
 ## 🎯 Most Common Usage
 
@@ -41,6 +42,29 @@ rm -rf build && ./build.sh
 
 # Custom background
 ./build/bgremover_gpu --background-image office.jpg
+```
+
+## 🖥️ No Preview Usage Examples
+
+```bash
+# Virtual camera without preview (recommended for streaming)
+./build/bgremover_gpu --vcam --no-preview
+
+# Virtual camera with custom settings and no preview
+./build/bgremover_gpu --vcam --blur-high --no-preview
+./build/bgremover_gpu --vcam --background-image studio.jpg --no-preview
+
+# Headless webcam processing (server/automation)
+./build/bgremover_gpu --no-preview
+
+# Headless video file processing
+./build/bgremover path/to/video.mp4 --no-preview --background-image background.jpg
+
+# Maximum performance for 1080p processing
+./build/bgremover_gpu --no-preview --blur-low
+
+# CPU processing without GUI overhead
+./build/bgremover --no-preview --blur-high
 ```
 
 ## 📖 Complete Documentation
