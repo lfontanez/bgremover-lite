@@ -8,6 +8,7 @@
 #include <string>
 #include <iomanip>
 #include <sstream>
+#include <unistd.h>
 
 using namespace cv;
 using namespace std;
@@ -343,7 +344,12 @@ int main(int argc, char** argv) {
     logSuccess("Model loaded successfully!");
 
     if (!quiet_mode) {
-        std::cout << "Press ESC to quit\n";
+        std::cout << "Process started with PID: " << getpid() << std::endl;
+        if (show_preview) {
+            std::cout << "Press ESC in preview window to quit\n";
+        } else {
+            std::cout << "Press CTRL+C to quit\n";
+        }
     }
     Mat frame;
     auto start_time = std::chrono::high_resolution_clock::now();

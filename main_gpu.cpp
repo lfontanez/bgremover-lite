@@ -12,6 +12,7 @@
 #include <cuda_runtime_api.h>
 #include <driver_types.h>
 #include <cuda.h>
+#include <unistd.h>
 #include "v4l2_output.hpp"
 
 using namespace cv;
@@ -690,7 +691,12 @@ int main(int argc, char** argv) {
     logSuccess("Model loaded successfully!");
 
     if (!quiet_mode) {
-        logInfo("Press ESC to quit");
+        logInfo("Process started with PID: " + std::to_string(getpid()));
+        if (show_preview) {
+            logInfo("Press ESC in preview window to quit");
+        } else {
+            logInfo("Press CTRL+C to quit");
+        }
     }
     cv::Mat frame;
     auto start_time = std::chrono::high_resolution_clock::now();
