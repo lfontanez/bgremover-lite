@@ -62,26 +62,26 @@ void showUsage(const std::string& program_name) {
 void showCurrentSettings(bool blur_enabled, const std::string& blur_level, 
                         bool vcam_enabled, const std::string& vcam_device,
                         const std::string& background_image, bool show_preview) {
-    std::cout << "Current settings:\n";
+    logInfo("Current settings:");
     if (!background_image.empty()) {
-        std::cout << "  Background replacement: " << background_image << " (ENABLED)\n";
+        logInfo("  Background replacement: " + background_image + " (ENABLED)");
     } else {
-        std::cout << "  Background blur: " << (blur_enabled ? "Enabled" : "Disabled") << "\n";
+        logInfo("  Background blur: " + std::string(blur_enabled ? "Enabled" : "Disabled"));
         if (blur_enabled) {
-            std::cout << "  Blur intensity: " << blur_level << "\n";
+            logInfo("  Blur intensity: " + blur_level);
             cv::Size kernel_size;
             if (blur_level == "low") kernel_size = cv::Size(7, 7);
             else if (blur_level == "high") kernel_size = cv::Size(25, 25);
             else kernel_size = cv::Size(15, 15);  // mid
-            std::cout << "  Kernel size: " << kernel_size.width << "x" << kernel_size.height << "\n";
+            logInfo("  Kernel size: " + std::to_string(kernel_size.width) + "x" + std::to_string(kernel_size.height));
         }
     }
-    std::cout << "  Preview window: " << (show_preview ? "Enabled" : "Disabled") << "\n";
-    std::cout << "  Virtual camera: " << (vcam_enabled ? "Enabled" : "Disabled") << "\n";
+    logInfo("  Preview window: " + std::string(show_preview ? "Enabled" : "Disabled"));
+    logInfo("  Virtual camera: " + std::string(vcam_enabled ? "Enabled" : "Disabled"));
     if (vcam_enabled) {
-        std::cout << "  Virtual camera device: " << vcam_device << "\n";
+        logInfo("  Virtual camera device: " + vcam_device);
     }
-    std::cout << "\n";
+    logInfo("");
 }
 
 // GPU Memory Management and Performance Monitoring
@@ -235,9 +235,9 @@ public:
         if (initialized) return;
         
         if (cuda_available) {
-            std::cout << "✅ Memory manager initialized (GPU acceleration enabled via ONNX Runtime)" << std::endl;
+            logSuccess("Memory manager initialized (GPU acceleration enabled via ONNX Runtime)");
         } else {
-            std::cout << "✅ Memory manager initialized (CPU mode)" << std::endl;
+            logSuccess("Memory manager initialized (CPU mode)");
         }
         
         initialized = true;
@@ -575,13 +575,13 @@ int main(int argc, char** argv) {
     
     // Performance advisory for high resolutions
     if (width * height >= 1920 * 1080) {
-        std::cout << "🎬 1080p HD processing - GPU acceleration recommended for real-time performance\n";
+        logInfo("1080p HD processing - GPU acceleration recommended for real-time performance");
     } else if (width * height >= 1280 * 720) {
-        std::cout << "📺 HD resolution processing (" << width << "x" << height << ")\n";
+        logInfo("HD resolution processing (" + std::to_string(width) + "x" + std::to_string(height) + ")");
     }
     
-    std::cout << "Video properties - FPS: " << fps << ", Resolution: " 
-         << width << "x" << height << "\n";
+    logInfo("Video properties - FPS: " + std::to_string(fps) + ", Resolution: " + 
+         std::to_string(width) + "x" + std::to_string(height));
 
     // Initialize virtual camera if enabled
     std::unique_ptr<V4L2Output> vcam_output;
@@ -618,11 +618,11 @@ int main(int argc, char** argv) {
     bool cuda_available = false;
     try {
         auto providers = Ort::GetAvailableProviders();
-        logInfo("Available ONNX Runtime providers: ");
+        std::string providers_list;
         for (const auto& provider : providers) {
-            std::cout << provider << " ";
+            providers_list += provider + " ";
         }
-        std::cout << std::endl;
+        logInfo("Available ONNX Runtime providers: " + providers_list);
         
         // Check if CUDA provider is available
         cuda_available = std::find(providers.begin(), providers.end(), "CUDAExecutionProvider") != providers.end();
@@ -899,7 +899,7 @@ int main(int argc, char** argv) {
     // Close stats file if open
     if (stats_file_stream.is_open()) {
         stats_file_stream.close();
-        std::cout << "📊 Stats file closed: " << stats_file << std::endl;
+        logInfo("Stats file closed: " + stats_file);
     }
     
     // Clear pre-allocated matrices to free memory
@@ -908,7 +908,7 @@ int main(int argc, char** argv) {
     output.release();
     blurred.release();
     
-    std::cout << "🧹 Processing cleanup completed" << std::endl;
+    logInfo("Processing cleanup completed");
     
     return 0;
 }
