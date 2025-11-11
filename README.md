@@ -635,10 +635,10 @@ v4l2-ctl --list-devices
 
 # Try recreating the device with specific parameters
 sudo rmmod v4l2loopback
-sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="BackgroundRemover"
+sudo modprobe v4l2loopback devices=1 video_nr=2 exclusive_caps=1 card_label="BackgroundRemover"
 
 # Some applications require a different pixel format - try:
-sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="BackgroundRemover" pixel_format=YUYV
+sudo modprobe v4l2loopback devices=1 video_nr=2 exclusive_caps=1 card_label="BackgroundRemover" pixel_format=YUYV
 ```
 
 #### Module Not Loading on Boot
@@ -651,7 +651,7 @@ ls -la /etc/modprobe.d/
 
 # Re-add the module to load automatically
 echo "v4l2loopback" | sudo tee -a /etc/modules
-echo "options v4l2loopback video_nr=2 card_label=\"BGRemover Virtual Camera\"" | sudo tee -a /etc/modprobe.d/v4l2loopback.conf
+echo "options v4l2loopback video_nr=2 exclusive_caps=1 card_label=\"BGRemover Virtual Camera\"" | sudo tee -a /etc/modprobe.d/v4l2loopback.conf
 
 # Update initramfs (if using Ubuntu/Debian)
 sudo update-initramfs -u
@@ -812,9 +812,10 @@ rm -rf onnxruntime build
 # Check OpenCV CUDA support
 python3 -c "import cv2; print(cv2.cuda.getCudaEnabledDeviceCount())"
 
-# If 0, install CUDA-enabled OpenCV:
-conda create -n opencv_cuda12 python=3.11 opencv cudatoolkit=12.1
-conda activate opencv_cuda12
+# If 0, install CUDA-enabled OpenCV:     
+conda create -n opencv_cuda12 python=3.12
+conda install -c conda-forge -y glib gtk3 gstreamer gst-plugins-base protobuf absl-py onnxruntime
+conda install -c nvidia -y cuda-toolkit cudnn"
 ```
 
 ### Build Errors
