@@ -206,7 +206,9 @@ except Exception as e:
     else
         log_error "❌ OpenCV CUDA support not available"
         log_info "Install CUDA-enabled OpenCV:"
-        echo "  conda create -n opencv_cuda12 python=3.11 opencv cudatoolkit=12.1"
+        echo "  conda create -n opencv_cuda12 python=3.12"
+        echo "  conda install -c conda-forge -y glib gtk3 gstreamer gst-plugins-base protobuf absl-py"
+        echo "  conda install -c nvidia cuda-toolkit cudnn"
         echo "  conda activate opencv_cuda12"
     fi
     

@@ -118,8 +118,8 @@ make -j$(nproc)
 
 **Quick GPU Setup:**
 ```bash
-# Install CUDA-enabled OpenCV in Conda (recommended)
-conda create -n opencv_cuda12 python=3.11 opencv cudatoolkit=12.1
+# Install CUDA-enabled OpenCV in Conda (recommended) (12.8 was not available, so no CUDA pytorch) 
+conda create -n opencv_cuda12 python=3.11 opencv cudatoolkit=12.5 
 conda activate opencv_cuda12
 
 # Build with GPU acceleration

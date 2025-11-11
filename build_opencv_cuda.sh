@@ -10,8 +10,8 @@ set -e
 OPENCV_VERSION="4.12.0"                      # valid tag
 BUILD_DIR="$HOME/opencv_build"
 CONDA_ENV_NAME="opencv_cuda12"               # <-- your active Conda env name
-CONDA_PREFIX_PATH=$(conda info --base)/envs/${CONDA_ENV_NAME}
-INSTALL_PREFIX="${CONDA_PREFIX_PATH}"        # install inside the Conda env
+CONDA_PREFIX=$(conda info --base)/envs/${CONDA_ENV_NAME}
+INSTALL_PREFIX="${CONDA_PREFIX}"        # install inside the Conda env
 LAUNCHER_PATH="$HOME/.local/bin/opencv_py"
 
 # ===== Activate Conda environment =====
@@ -22,6 +22,11 @@ eval "$($(conda info --base)/bin/conda shell.bash hook)"
 
 # Now activate the env
 conda activate "${CONDA_ENV_NAME}"
+export CMAKE_PREFIX_PATH="${CONDA_PREFIX}"        # install inside the Conda env
+export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}"
+export PKG_CONFIG_PATH="${CONDA_PREFIX}/lib/pkgconfig"
+export CC=/usr/bin/gcc
+export CXX=/usr/bin/g++
 
 # ===== Detect Python inside Conda =====
 echo "🔍 Detecting Python inside Conda environment..."
@@ -82,10 +87,11 @@ rm -rf build && mkdir build && cd build
 echo "⚙️  Configuring OpenCV with CUDA 12.8..."
 cmake -D CMAKE_BUILD_TYPE=Release \
       -D CMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
-      -D CMAKE_INSTALL_RPATH="$CONDA_PREFIX/lib" \
+      -D CMAKE_INSTALL_RPATH="${CONDA_PREFIX}/lib" \
       -D OPENCV_EXTRA_MODULES_PATH=${BUILD_DIR}/opencv_contrib/modules \
-      -D ZLIB_LIBRARY="$CONDA_PREFIX/lib/libz.so" \
-      -D ZLIB_INCLUDE_DIR="$CONDA_PREFIX/include" \
+      -D ZLIB_LIBRARY="${CONDA_PREFIX}/lib/libz.so" \
+      -D ZLIB_INCLUDE_DIR="${CONDA_PREFIX}/include" \
+      -D WITH_OPENCL=OFF \
       -D WITH_CUDA=ON \
       -D CUDA_ARCH_BIN=89 \
       -D WITH_CUDNN=ON \
@@ -93,8 +99,11 @@ cmake -D CMAKE_BUILD_TYPE=Release \
       -D OPENCV_DNN_CUDA=ON \
       -D WITH_OPENBLAS=ON \
       -D WITH_LAPACK=ON \
-      -D LAPACK_LIBRARIES="$CONDA_PREFIX/lib/libopenblas.so" \
-      -D OpenBLAS_INCLUDE_DIRS="$CONDA_PREFIX/include" \
+      -D BUILD_PROTOBUF=OFF \
+      -D PROTOBUF_UPDATE_FILES=ON \
+      -D OPENCV_DNN_PROTOBUF_ENABLED=ON \
+      -D LAPACK_LIBRARIES="${CONDA_PREFIX}/lib/libopenblas.so" \
+      -D OpenBLAS_INCLUDE_DIRS="${CONDA_PREFIX}/include" \
       -D ENABLE_FAST_MATH=1 \
       -D CUDA_FAST_MATH=1 \
       -D CMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc \
@@ -158,26 +167,26 @@ fi
 # =========================================================
 # 🧪 Post‑Build Verification
 # =========================================================
-echo "🧪 Verifying OpenCV with CUDA 12.8/cuDNN..."
+echo "🧪 Verifying OpenCV with CUDA 12.8/cuDNN..."
 
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate ${CONDA_ENV_NAME}
 
 LD_PRELOAD=${GLIB_PATH} python - <<'PY'
-import cv2
-print("✅ OpenCV CUDA/cuDNN import successful!")
-print("Version:", cv2.__version__)
-n = cv2.cuda.getCudaEnabledDeviceCount()
-print("CUDA devices:", n)
+import cv2;
+print("✅ OpenCV CUDA/cuDNN import successful!");
+print("Version:", cv2.__version__);
+n = cv2.cuda.getCudaEnabledDeviceCount();
+print("CUDA devices:", n);
 if n:
     props = cv2.cuda.getDeviceProperties(0)
     print("GPU:", props.name)
 info = cv2.getBuildInformation()
-print("cuDNN:", "YES" if "cuDNN:                         YES" in info else "NO")
+print("cuDNN:", "YES" if "cuDNN: YES" in info else "NO");
 PY
 
 echo
-echo "🚀 Done! Run GPU‑enabled scripts via:"
+echo "🚀 Done! Run GPU-enabled scripts via:"
 echo "   opencv_py my_script.py"
 echo
 echo "👉 To export the launcher globally:"
