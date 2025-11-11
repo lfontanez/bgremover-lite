@@ -181,6 +181,9 @@ public:
 // Global GPU memory manager
 GPUMemoryManager gpu_manager;
 
+// Global stats file stream
+std::ofstream stats_file_stream;
+
 // Logging level control
 enum class LogLevel {
     QUIET = 0,
@@ -532,6 +535,18 @@ int main(int argc, char** argv) {
         }
     }
     
+    // Open stats file if specified
+    if (!stats_file.empty()) {
+        stats_file_stream.open(stats_file, std::ios::out | std::ios::trunc);
+        if (stats_file_stream.is_open()) {
+            // Write CSV header
+            stats_file_stream << "Timestamp,FPS,GPU_Memory_Used_GB,GPU_Memory_Total_GB,Processing_Time_ms,Frame_Count,Mode\n";
+            logSuccess("Stats file opened: " + stats_file);
+        } else {
+            logWarning("Failed to open stats file: " + stats_file);
+        }
+    }
+    
     // Show current settings (only if not in quiet mode)
     if (!quiet_mode) {
         showCurrentSettings(blur_enabled, blur_level, vcam_enabled, vcam_device, background_image, show_preview);
@@ -824,6 +839,36 @@ int main(int argc, char** argv) {
                  << fps_real << " FPS (" << frame_count << " frames in "
                  << duration.count() << "ms)" << processing_info << std::endl;
             
+            // Write to stats file if open
+            if (stats_file_stream.is_open()) {
+                // Get current timestamp
+                auto now = std::chrono::system_clock::now();
+                auto now_time = std::chrono::system_clock::to_time_t(now);
+                std::stringstream timestamp_ss;
+                timestamp_ss << std::put_time(std::localtime(&now_time), "%Y-%m-%d %H:%M:%S");
+                
+                // Get GPU memory info
+                double gpu_used_gb = 0.0, gpu_total_gb = 0.0;
+                if (cuda_available && cuda_used) {
+                    size_t current_free = 0, current_total = 0;
+                    cudaError_t error = cudaMemGetInfo(&current_free, &current_total);
+                    if (error == cudaSuccess) {
+                        gpu_used_gb = (current_total - current_free) / (1024.0 * 1024.0 * 1024.0);
+                        gpu_total_gb = current_total / (1024.0 * 1024.0 * 1024.0);
+                    }
+                }
+                
+                // Write CSV line
+                stats_file_stream << timestamp_ss.str() << ","
+                                 << std::fixed << std::setprecision(2) << fps_real << ","
+                                 << std::fixed << std::setprecision(3) << gpu_used_gb << ","
+                                 << std::fixed << std::setprecision(3) << gpu_total_gb << ","
+                                 << duration.count() << ","
+                                 << frame_count << ","
+                                 << perf_label << "\n";
+                stats_file_stream.flush(); // Ensure data is written immediately
+            }
+            
             // Reset for next measurement
             frame_count = 0;
             start_time = current_time;
@@ -846,6 +891,12 @@ int main(int argc, char** argv) {
     // Clean up virtual camera
     if (vcam_output) {
         vcam_output->close();
+    }
+    
+    // Close stats file if open
+    if (stats_file_stream.is_open()) {
+        stats_file_stream.close();
+        std::cout << "📊 Stats file closed: " << stats_file << std::endl;
     }
     
     // Clear pre-allocated matrices to free memory
