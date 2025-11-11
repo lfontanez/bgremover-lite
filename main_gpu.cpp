@@ -678,13 +678,13 @@ int main(int argc, char** argv) {
     
     bool cuda_used = false;
     if (cuda_available) {
-        std::cout << "🚀 GPU acceleration enabled!" << std::endl;
-        std::cout << "📊 Processing requires ~" << estimated_1080p_mb << "MB for frame buffers" << std::endl;
+        logSuccess("GPU acceleration enabled!");
+        logInfo("Processing requires ~" + std::to_string(estimated_1080p_mb) + "MB for frame buffers");
         gpu_manager.printMemoryStats("after model load");
         cuda_used = true;
     } else {
-        std::cout << "⚠️  Using CPU fallback (GPU not available or not configured)" << std::endl;
-        std::cout << "📊 CPU processing may be slower - consider GPU version for optimal performance" << std::endl;
+        logWarning("Using CPU fallback (GPU not available or not configured)");
+        logInfo("CPU processing may be slower - consider GPU version for optimal performance");
     }
     
     logSuccess("Model loaded successfully!");
