@@ -157,7 +157,7 @@ public:
             }
         } else {
             cuda_available = false;
-            logWarning("CUDA runtime not available");
+            logMessage(LogLevel::NORMAL, "CUDA runtime not available");
         }
     }
     
