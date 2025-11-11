@@ -107,24 +107,24 @@ public:
             if (error == cudaSuccess) {
                 double total_gb = total_memory / (1024.0 * 1024.0 * 1024.0);
                 double free_gb = free_memory / (1024.0 * 1024.0 * 1024.0);
-                std::cout << "✅ CUDA runtime initialized successfully" << std::endl;
-                std::cout << "✅ GPU Memory: " << free_gb << "GB free / " 
-                     << total_gb << "GB total" << std::endl;
+                logSuccess("CUDA runtime initialized successfully");
+                logSuccess("GPU Memory: " + std::to_string(free_gb) + "GB free / " + 
+                     std::to_string(total_gb) + "GB total");
             } else {
-                std::cout << "⚠️  CUDA initialized but memory query failed: " 
-                     << cudaGetErrorString(error) << std::endl;
+                logWarning("CUDA initialized but memory query failed: " + 
+                     std::string(cudaGetErrorString(error)));
                 // Still set cuda_available to true since CUDA works
                 cuda_available = true;
             }
         } else {
             cuda_available = false;
-            std::cout << "⚠️  CUDA runtime not available" << std::endl;
+            logWarning("CUDA runtime not available");
         }
     }
     
     void printMemoryStats(const std::string& label = "") {
         if (!cuda_available) {
-            std::cout << "GPU Memory " << label << ": Not available (CPU mode)" << std::endl;
+            logInfo("GPU Memory " + label + ": Not available (CPU mode)");
             return;
         }
         
@@ -134,17 +134,17 @@ public:
             double used_gb = (current_total - current_free) / (1024.0 * 1024.0 * 1024.0);
             double free_gb = current_free / (1024.0 * 1024.0 * 1024.0);
             double total_gb = current_total / (1024.0 * 1024.0 * 1024.0);
-            std::cout << "GPU Memory " << label << ": " 
-                 << used_gb << "GB used / " << free_gb << "GB free / " 
-                 << total_gb << "GB total" << std::endl;
+            logInfo("GPU Memory " + label + ": " + 
+                 std::to_string(used_gb) + "GB used / " + std::to_string(free_gb) + "GB free / " + 
+                 std::to_string(total_gb) + "GB total");
         } else {
             // Use cached values if current query fails
             double used_gb = (total_memory - free_memory) / (1024.0 * 1024.0 * 1024.0);
             double free_gb = free_memory / (1024.0 * 1024.0 * 1024.0);
             double total_gb = total_memory / (1024.0 * 1024.0 * 1024.0);
-            std::cout << "GPU Memory " << label << ": " 
-                 << used_gb << "GB used / " << free_gb << "GB free / " 
-                 << total_gb << "GB total (cached)" << std::endl;
+            logInfo("GPU Memory " + label + ": " + 
+                 std::to_string(used_gb) + "GB used / " + std::to_string(free_gb) + "GB free / " + 
+                 std::to_string(total_gb) + "GB total (cached)");
         }
     }
     
@@ -173,8 +173,8 @@ public:
         if (cuda_available) {
             cudaError_t error = cudaMemGetInfo(&free_memory, &total_memory);
             if (error != cudaSuccess) {
-                std::cout << "⚠️  Failed to update memory info: " 
-                     << cudaGetErrorString(error) << std::endl;
+                logWarning("Failed to update memory info: " + 
+                     std::string(cudaGetErrorString(error)));
             }
         }
     }
@@ -285,9 +285,9 @@ cv::Mat run_inference(Ort::Session& session, const cv::Mat& img, bool cuda_avail
     if (cuda_available) {
         // For RTX 4070 Ti SUPER with 15GB, we should always have enough memory
         if (gpu_manager.hasSufficientMemory(100 * 1024 * 1024)) { // 100MB minimum
-            std::cout << "✅ GPU memory sufficient (" << required_mb << "MB required)" << std::endl;
+            logSuccess("GPU memory sufficient (" + std::to_string(required_mb) + "MB required)");
         } else {
-            std::cout << "⚠️  Memory check failed, but proceeding with GPU" << std::endl;
+            logWarning("Memory check failed, but proceeding with GPU");
         }
     }
     
@@ -529,11 +529,11 @@ int main(int argc, char** argv) {
     if (!background_image.empty()) {
         background_mat = cv::imread(background_image, cv::IMREAD_COLOR);
         if (background_mat.empty()) {
-            std::cerr << "❌ Failed to load background image: " << background_image << "\n";
+            logError("Failed to load background image: " + background_image);
             return 1;
         } else {
-            std::cout << "✅ Loaded background image: " << background_image 
-                      << " (" << background_mat.cols << "x" << background_mat.rows << ")\n";
+            logSuccess("Loaded background image: " + background_image + 
+                      " (" + std::to_string(background_mat.cols) + "x" + std::to_string(background_mat.rows) + ")");
         }
     }
     
@@ -588,21 +588,21 @@ int main(int argc, char** argv) {
     bool vcam_opened = false;
     
     if (vcam_enabled) {
-        std::cout << "Initializing virtual camera at: " << vcam_device << "\n";
+        logInfo("Initializing virtual camera at: " + vcam_device);
         
         // Always use 1080p for virtual camera output
         const int vcam_width = 1920;
         const int vcam_height = 1080;
         
-        std::cout << "🖥️ 1080p HD virtual camera: " << vcam_width << "x" << vcam_height << "\n";
+        logInfo("1080p HD virtual camera: " + std::to_string(vcam_width) + "x" + std::to_string(vcam_height));
         
         vcam_output = std::make_unique<V4L2Output>(vcam_device, vcam_width, vcam_height);
         if (vcam_output->open()) {
             vcam_opened = true;
-            std::cout << "✅ 1080p Virtual camera enabled: " << vcam_device << " (" 
-                 << vcam_output->getSize().width << "x" << vcam_output->getSize().height << ")\n";
+            logSuccess("1080p Virtual camera enabled: " + vcam_device + " (" + 
+                 std::to_string(vcam_output->getSize().width) + "x" + std::to_string(vcam_output->getSize().height) + ")");
         } else {
-            std::cout << "⚠️ Virtual camera failed to open, continuing without it\n";
+            logWarning("Virtual camera failed to open, continuing without it");
             vcam_output.reset();
         }
     }
@@ -718,7 +718,7 @@ int main(int argc, char** argv) {
         if (frame.cols != width || frame.rows != height) {
             cv::resize(frame, frame, cv::Size(width, height));
             if (first_frame) {
-                std::cout << "📐 Resized input to: " << width << "x" << height << " for processing" << std::endl;
+                logInfo("Resized input to: " + std::to_string(width) + "x" + std::to_string(height) + " for processing");
             }
         }
         
@@ -727,7 +727,7 @@ int main(int argc, char** argv) {
             if (frame.cols != 1920 || frame.rows != 1080) {
                 cv::resize(frame, frame, cv::Size(1920, 1080));
                 if (first_frame) {
-                    std::cout << "🖥️ Auto-resized to 1080p for virtual camera: 1920x1080" << std::endl;
+                    logInfo("Auto-resized to 1080p for virtual camera: 1920x1080");
                 }
             }
         }
@@ -838,9 +838,9 @@ int main(int argc, char** argv) {
                 processing_info += " [No Preview]";
             }
             
-            std::cout << "🚀 " << perf_label << " Performance: " 
-                 << fps_real << " FPS (" << frame_count << " frames in "
-                 << duration.count() << "ms)" << processing_info << std::endl;
+            logInfo(perf_label + " Performance: " + 
+                 std::to_string(fps_real) + " FPS (" + std::to_string(frame_count) + " frames in " +
+                 std::to_string(duration.count()) + "ms)" + processing_info);
             
             // Write to stats file if open
             if (stats_file_stream.is_open()) {
