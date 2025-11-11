@@ -592,11 +592,11 @@ sudo apt update
 sudo apt install v4l2loopback-dkms
 
 # Load the kernel module with desired parameters
-sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="BGRemover Virtual Camera"
+sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="BGRemover Virtual Camera" exclusive_caps=1
 
 # Make the module load automatically on boot
 echo "v4l2loopback" | sudo tee -a /etc/modules
-echo "options v4l2loopback video_nr=2 card_label=\"BGRemover Virtual Camera\"" | sudo tee -a /etc/modprobe.d/v4l2loopback.conf
+echo "options v4l2loopback video_nr=2 card_label=\"BGRemover Virtual Camera\" exclusive_caps=1" | sudo tee -a /etc/modprobe.d/v4l2loopback.conf
 ```
 
 ### Usage
