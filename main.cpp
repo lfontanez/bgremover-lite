@@ -398,20 +398,33 @@ int main(int argc, char** argv) {
             output.create(frame.size(), frame.type());
         }
         
-        // Optimized pixel-level blend
+        // Optimized pixel-level blend with comprehensive safety checks
         Mat mask_clean = (mask > 0.5);
         if (!background_image.empty()) {
             // Use background replacement
             output = replace_background(frame, mask, background_mat);
         } else if (blur_enabled) {
-            // Use blur effect
-            frame.copyTo(output, mask_clean);
-            // Safety check for blurred frame
-            if (!blurred.empty() && blurred.size() == output.size() && blurred.type() == output.type()) {
-                output.setTo(blurred, ~mask_clean);
+            // Ensure mask_clean is valid
+            if (mask_clean.empty() || mask_clean.type() != CV_8U) {
+                // Fallback: use original frame without processing
+                frame.copyTo(output);
+                logWarning("Invalid mask detected - using original frame");
             } else {
-                // Fallback: use original frame for background
-                frame.copyTo(output, ~mask_clean);
+                // Use blur effect with safe mask operations
+                frame.copyTo(output, mask_clean);
+                
+                // Safety check for blurred frame and create inverted mask safely
+                if (!blurred.empty() && blurred.size() == output.size() && blurred.type() == output.type()) {
+                    // Create inverted mask safely
+                    Mat inverted_mask;
+                    bitwise_not(mask_clean, inverted_mask);
+                    output.setTo(blurred, inverted_mask);
+                } else {
+                    // Fallback: use original frame for background
+                    Mat inverted_mask;
+                    bitwise_not(mask_clean, inverted_mask);
+                    frame.copyTo(output, inverted_mask);
+                }
             }
         } else {
             // No blur - just show original frame
