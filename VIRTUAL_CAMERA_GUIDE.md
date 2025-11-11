@@ -201,6 +201,74 @@ v4l2-ctl --device=/dev/video2 --list-formats-ext
 ./test_virtual_camera.sh
 ```
 
+## When to Use --no-preview with Virtual Camera
+
+The `--no-preview` flag is essential for virtual camera usage when you want to:
+
+### **Headless Operation**
+Run BGRemover without a local preview window, perfect for:
+- **Server environments**: No GUI available
+- **Automated processing**: Background services and scripts
+- **Container deployment**: Docker/Kubernetes environments
+- **Resource optimization**: Save memory and CPU for processing
+
+### **Streaming and Production**
+When you only need the virtual camera output:
+- **Professional streaming**: No need for local preview window
+- **Video conferencing**: Focus on virtual camera output only
+- **Multiple instances**: Run several BGRemover processes without window clutter
+- **24/7 operation**: Long-running services without GUI overhead
+
+### **Performance Benefits**
+- **Reduced Memory Usage**: Saves ~50-100MB of RAM
+- **Better Performance**: Eliminates GUI rendering overhead
+- **Cleaner Interface**: No window management needed
+- **Multiple Instance Support**: Run multiple processes without window clutter
+
+### **Common --no-preview Use Cases**
+
+```bash
+# Virtual camera only (most common)
+./build/bgremover_gpu --vcam --no-preview
+
+# Virtual camera with different blur levels
+./build/bgremover_gpu --vcam --no-preview --blur-low         # Subtle blur
+./build/bgremover_gpu --vcam --no-preview --blur-high        # Strong blur
+./build/bgremover_gpu --vcam --no-preview --no-blur          # No blur
+
+# Virtual camera with custom backgrounds
+./build/bgremover_gpu --vcam --no-preview --background-image office.jpg
+./build/bgremover_gpu --vcam --no-preview --bg-image studio.jpg
+
+# Custom virtual camera device without preview
+./build/bgremover_gpu --vcam-device /dev/video3 --no-preview
+
+# Process video files to virtual camera without preview
+./build/bgremover_gpu path/to/video.mp4 --vcam --no-preview
+./build/bgremover_gpu path/to/video.mp4 --vcam --no-preview --blur-high
+
+# Multiple virtual cameras without preview windows
+./build/bgremover_gpu /dev/video0 --vcam-device /dev/video2 --no-preview &
+./build/bgremover_gpu /dev/video1 --vcam-device /dev/video3 --no-preview &
+```
+
+### **Production Deployment Examples**
+
+```bash
+# Systemd service for 24/7 virtual camera operation
+./build/bgremover_gpu --vcam --no-preview --blur-mid --background-image corporate.jpg
+
+# Docker container with virtual camera output
+./build/bgremover_gpu --vcam --no-preview --vcam-device /dev/video2
+
+# Automated background processing pipeline
+./build/bgremover_gpu --vcam --no-preview --background-image stream-background.jpg
+
+# Multiple blur presets for different scenarios
+./build/bgremover_gpu --vcam --no-preview --blur-low    # Day mode
+./build/bgremover_gpu --vcam --no-preview --blur-high   # Privacy mode
+```
+
 ## Usage Examples
 
 ### Basic Usage
@@ -213,6 +281,11 @@ v4l2-ctl --device=/dev/video2 --list-formats-ext
 ./build/bgremover_gpu --vcam --blur-low         # Subtle background blur
 ./build/bgremover_gpu --vcam --blur-high        # Maximum background blur
 ./build/bgremover_gpu --vcam --no-blur          # No background blur
+
+# Virtual camera without preview window (recommended for streaming)
+./build/bgremover_gpu --vcam --no-preview       # Virtual camera only, no local window
+./build/bgremover_gpu --vcam --no-preview --blur-high  # High blur to virtual camera only
+./build/bgremover_gpu --vcam --no-preview --background-image office.jpg  # Custom background without preview
 ```
 
 ### Custom Input Source
@@ -224,6 +297,10 @@ v4l2-ctl --device=/dev/video2 --list-formats-ext
 
 # Use specific webcam device (1080p output)
 ./build/bgremover_gpu /dev/video1 --vcam --blur-mid          # Medium blur
+
+# Video file to virtual camera without preview
+./build/bgremover_gpu path/to/video.mp4 --vcam --no-preview  # Process video without preview window
+./build/bgremover_gpu path/to/video.mp4 --vcam --no-preview --blur-high  # High blur without preview
 ```
 
 ### Custom Virtual Camera Device
@@ -234,6 +311,10 @@ v4l2-ctl --device=/dev/video2 --list-formats-ext
 
 # Combined with video file (1080p)
 ./build/bgremover_gpu video.mp4 --vcam-device /dev/video3 --no-blur   # No blur
+
+# Custom device without preview window
+./build/bgremover_gpu --vcam-device /dev/video3 --no-preview  # Custom device, no preview
+./build/bgremover_gpu --vcam-device /dev/video3 --no-preview --blur-mid  # Custom device, medium blur, no preview
 ```
 
 ### Background Blur Examples
@@ -250,6 +331,11 @@ v4l2-ctl --device=/dev/video2 --list-formats-ext
 
 # Different blur for different meetings
 ./build/bgremover_gpu --vcam --blur-mid    # Default balanced blur
+
+# Background blur without preview window (headless operation)
+./build/bgremover_gpu --vcam --blur-low --no-preview    # Subtle blur, no preview
+./build/bgremover_gpu --vcam --blur-high --no-preview   # Strong blur, no preview
+./build/bgremover_gpu --vcam --no-blur --no-preview     # No blur, no preview
 ```
 
 ### Testing 1080p Virtual Camera Output
@@ -273,6 +359,27 @@ v4l2-ctl --device=/dev/video2 --list-formats-ext
 #   Size: Discrete 1920x1080 @ 30.00fps
 ```
 
+### Testing Virtual Camera Without Preview
+
+When using `--no-preview`, you can still verify the virtual camera is working:
+
+```bash
+# Start BGRemover without preview
+./build/bgremover_gpu --vcam --no-preview &
+
+# Check if process is running
+ps aux | grep bgremover_gpu
+
+# Verify virtual camera device is receiving data
+ffplay -vf "scale=1920:1080" /dev/video2
+
+# Monitor virtual camera activity
+v4l2-ctl --device=/dev/video2 --stream-mmap=4 --verbose
+
+# Check for frame drops in virtual camera output
+ffmpeg -f v4l2 -i /dev/video2 -t 10 -f null - 2>&1 | grep frame
+```
+
 ### 1080p Performance Testing
 
 ```bash
@@ -287,6 +394,26 @@ watch -n 1 'nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --fo
 
 # Check for frame drops in virtual camera
 ffmpeg -f v4l2 -i /dev/video2 -t 10 -f null - 2>&1 | grep frame
+
+# Test 1080p performance without preview (headless mode)
+time ./build/bgremover_gpu --vcam --no-preview &
+PID=$!
+sleep 30
+kill $PID
+
+# Monitor GPU usage during headless 1080p processing
+watch -n 1 'nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv'
+
+# Compare performance with and without preview
+./build/bgremover_gpu --vcam --blur-mid &
+PID1=$!
+sleep 10
+kill $PID1
+
+./build/bgremover_gpu --vcam --no-preview --blur-mid &
+PID2=$!
+sleep 10
+kill $PID2
 ```
 
 ## Application-Specific Guides
@@ -701,16 +828,16 @@ sudo modprobe v4l2loopback exclusive_caps=1 video_nr=2 max_buffers=2
 Create a systemd service to auto-start BGRemover:
 
 ```bash
-# Create service file
+# Create service file with --no-preview for headless operation
 sudo tee /etc/systemd/system/bgremover.service > /dev/null <<EOF
 [Unit]
-Description=BGRemover Virtual Camera
+Description=BGRemover Virtual Camera (Headless)
 After=network.target
 
 [Service]
 Type=simple
 User=$USER
-ExecStart=/path/to/bgremover-lite/build/bgremover_gpu --vcam
+ExecStart=/path/to/bgremover-lite/build/bgremover_gpu --vcam --no-preview --blur-mid
 Restart=on-failure
 
 [Install]
@@ -720,6 +847,35 @@ EOF
 # Enable and start
 sudo systemctl enable bgremover.service
 sudo systemctl start bgremover.service
+
+# Check service status
+sudo systemctl status bgremover.service
+
+# View service logs
+sudo journalctl -u bgremover.service -f
+```
+
+### Docker Deployment with --no-preview
+
+For containerized deployment:
+
+```bash
+# Dockerfile example
+FROM ubuntu:22.04
+RUN apt-get update && apt-get install -y \
+    libopencv-dev \
+    onnxruntime \
+    v4l2loopback-dkms
+COPY build/bgremover_gpu /usr/local/bin/
+CMD ["bgremover_gpu", "--vcam", "--no-preview", "--blur-mid"]
+```
+
+```bash
+# Run container with virtual camera output
+docker run -d \
+  --device=/dev/video0 \
+  --device=/dev/video2 \
+  bgremover-lite --vcam --no-preview --blur-high
 ```
 
 ## Technical Details
